@@ -7,25 +7,25 @@
 OutputHookerConfig::OutputHookerConfig(QObject *parent)
     : QObject{parent}
 {
-    //Set settings to default
+    // Set settings to default
     useNewOutputsNotification = true;
     saveNewOutputsToDefaultINI = false;
     useMultiThreading = true;
     bypassSerialWriteChecks = false;
 
-    //Define save file and the path
+    // Define save file and the path
     settingsFile = QApplication::applicationDirPath() + "/" SETTINGSFILE;
 
-    //Load settings
+    // Load settings
     loadSettings();
 }
 
 OutputHookerConfig::~OutputHookerConfig()
 {
-    //Not used!
+    // Not used!
 }
 
-//Save settings
+// Save settings
 void OutputHookerConfig::saveSettings()
 {
     QSettings settings(settingsFile, QSettings::Format::IniFormat);
@@ -39,21 +39,32 @@ void OutputHookerConfig::saveSettings()
     settings.endGroup();
 }
 
-//Load settings
+// Load settings
 void OutputHookerConfig::loadSettings()
 {
     QSettings settings(settingsFile, QSettings::Format::IniFormat);
+
     settings.beginGroup("OutputHooker");
     useNewOutputsNotification = (settings.value("Notification").toBool());
     saveNewOutputsToDefaultINI = (settings.value("UseDefaultINI").toBool());
     useMultiThreading = (settings.value("MultiThreading").toBool());
     settings.endGroup();
+
+    comPortPlaceholders.clear();
+    settings.beginGroup("COM_Ports");
+    QStringList keys = settings.allKeys();
+    foreach (const QString &key, keys)
+    {
+        comPortPlaceholders.insert(key, settings.value(key).toString());
+    }
+    settings.endGroup();
+
     settings.beginGroup("Debug");
     bypassSerialWriteChecks = (settings.value("BypassSerialWriteChecks").toBool());
     settings.endGroup();
 }
 
-//Get & Set settings
+// Get & Set settings
 bool OutputHookerConfig::getUseNewOutputsNotification()
 {
     return useNewOutputsNotification;
@@ -82,6 +93,11 @@ bool OutputHookerConfig::getUseMultiThreading()
 void OutputHookerConfig::setUseMultiThreading(bool umThreading)
 {
     useMultiThreading = umThreading;
+}
+
+QMap<QString, QString> OutputHookerConfig::getComPortPlaceholders()
+{
+    return comPortPlaceholders;
 }
 
 bool OutputHookerConfig::getSerialPortWriteCheckBypass()

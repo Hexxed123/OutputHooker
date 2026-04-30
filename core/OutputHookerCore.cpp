@@ -184,6 +184,7 @@ OutputHookerCore::OutputHookerCore(OutputHookerConfig *ohConfig, QObject *parent
     // Connect the signals & slots for PacDrive
     connect(this, &OutputHookerCore::setPdPinState, p_pacDrive, &PacDriveModule::setPinState);
     connect(this, &OutputHookerCore::setPdLightIntensity, p_pacDrive, &PacDriveModule::setLightIntensity);
+    connect(this, &OutputHookerCore::setPdLightFadeTime, p_pacDrive, &PacDriveModule::setLightFadeTime);
     connect(this, &OutputHookerCore::setPdRGBColor, p_pacDrive, &PacDriveModule::setRGBColor);
     connect(this, &OutputHookerCore::turnAllPdLightsOff, p_pacDrive, &PacDriveModule::turnAllLightsOff);
     connect(p_pacDrive,&PacDriveModule::showErrorMessage, this, &OutputHookerCore::errorMessage);
@@ -192,6 +193,31 @@ OutputHookerCore::OutputHookerCore(OutputHookerConfig *ohConfig, QObject *parent
     {
         // Start PacDrive thread
         threadForUltimarc.start(QThread::HighPriority);
+    }
+
+    // Set up network commands
+    p_netCmd = new NetCmdModule();
+
+    if (useMultiThreading)
+    {
+        // Move NetCmdModule to different thread
+        p_netCmd->moveToThread(&threadForNetCmd);
+        connect(&threadForNetCmd, &QThread::finished, p_netCmd, &QObject::deleteLater);
+    }
+
+    // Network command connections
+
+    // Connect the signals & slots for network commands
+    connect(this, &OutputHookerCore::connectTcpHost, p_netCmd, &NetCmdModule::connectTcpHost);
+    connect(this, &OutputHookerCore::disconnectTcpHost, p_netCmd, &NetCmdModule::disconnectTcpHost);
+    connect(this, &OutputHookerCore::sendTcpCommand, p_netCmd, &NetCmdModule::sendTcpCommand);
+    connect(this, &OutputHookerCore::sendUdpCommand, p_netCmd, &NetCmdModule::sendUdpCommand);
+    connect(p_netCmd,&NetCmdModule::showErrorMessage, this, &OutputHookerCore::errorMessage);
+
+    if (useMultiThreading)
+    {
+        // Start network command thread
+        threadForNetCmd.start(QThread::HighPriority);
     }
 
     // KeyStates timer
@@ -216,11 +242,13 @@ OutputHookerCore::~OutputHookerCore()
         threadForCOMPort.quit();
         threadForLedWiz.quit();
         threadForUltimarc.quit();
+        threadForNetCmd.quit();
         threadForTCPSocket.wait();
         threadForWinMsg.wait();
         threadForCOMPort.wait();
         threadForLedWiz.wait();
         threadForUltimarc.wait();
+        threadForNetCmd.wait();
     }
     else
     {
@@ -229,6 +257,7 @@ OutputHookerCore::~OutputHookerCore()
         delete p_comPort;
         delete p_ledWiz;
         delete p_pacDrive;
+        delete p_netCmd;
     }
 }
 
@@ -275,6 +304,8 @@ void OutputHookerCore::loadSettingsFromList()
     // Don't get Multi-Threading, as it needs a application reset
     // useMultiThreading = p_config->getUseMultiThreading();
 
+    comPortPlaceholders = p_config->getComPortPlaceholders();
+
     emit setComPortBypassWriteChecks(bypassSerialWriteChecks);
 }
 
@@ -289,6 +320,12 @@ void OutputHookerCore::mainWindowState(bool isMin)
 void OutputHookerCore::setWinID(HWND handle)
 {
     p_winMsg->setWinID(handle);
+}
+
+// Execute command line commands
+void OutputHookerCore::executeCommandLineCommands(const QStringList &commands, const QString &value)
+{
+    executeINICommands(commands, value);
 }
 
 // Execute command from TestOutputWindow
@@ -414,6 +451,13 @@ void OutputHookerCore::executeTestCommand(const FunctionCommand &cmd)
             quint8 pacIntensity = cmd.param3.toUInt();
             setPacDriveLightIntensity(pacID, pacPin, pacIntensity);
         }
+        // PacDrive set light fade time command
+        else if (cmd.commandCode.startsWith(PACSETFADETIME, Qt::CaseInsensitive))
+        {
+            quint8 pacID = cmd.param1.toUInt() - 1;
+            quint8 pacFadetime = cmd.param2.toUInt();
+            setPacDriveLightFadeTime(pacID, pacFadetime);
+        }
         // PacDrive set RGB LED color command
         else if (cmd.commandCode.startsWith(PACSETCOLOR, Qt::CaseInsensitive))
         {
@@ -430,6 +474,41 @@ void OutputHookerCore::executeTestCommand(const FunctionCommand &cmd)
             quint8 pacID = cmd.param1.toUInt() - 1;
             turnAllPacDriveLightsOff(pacID);
         }
+    }
+    // TCP commands, starts with "ts"
+    else if (cmd.commandCode.startsWith(TCPCMDSTART, Qt::CaseInsensitive) == true)
+    {
+        // TCP connect command
+        if (cmd.commandCode.startsWith(TCPSOCKETCONNECT, Qt::CaseInsensitive))
+        {
+            quint8 socket = cmd.param1.toUInt();
+            QString host = cmd.param2;
+            quint16 port = cmd.param3.toUInt();
+            tcpConnect(socket, host, port);
+        }
+        // TCP disconnect command
+        else if (cmd.commandCode.startsWith(TCPSOCKETDISCONNECT, Qt::CaseInsensitive))
+        {
+            quint8 socket = cmd.param1.toUInt();
+            tcpDisconnect(socket);
+        }
+        // TCP send command
+        else if (cmd.commandCode.startsWith(TCPSOCKETSEND, Qt::CaseInsensitive))
+        {
+            quint8 socket = cmd.param1.toUInt();
+            QString tempCommand = cmd.param2 + "\n";
+            QByteArray command = tempCommand.toUtf8();
+            tcpSendCommand(socket, command);
+        }
+    }
+    // UDP send command
+    else if (cmd.commandCode.startsWith(UDPSOCKETSEND, Qt::CaseInsensitive))
+    {
+        quint8 type = cmd.param1.toUInt();
+        QString address = cmd.param2;
+        quint16 port = cmd.param3.toUInt();
+        QString command = cmd.param4;
+        udpSendCommand(type, address, port, command);
     }
     // Launch and Close Application commands, starts with "ap"
     else if (cmd.commandCode.startsWith(APPCMDSTART, Qt::CaseInsensitive) == true)
@@ -683,9 +762,11 @@ void OutputHookerCore::gameStopped()
             }
             QTextStream out(&iniFileTemp);
 
-            for (j = 0; j < foundCount; j++){
+            for (j = 0; j < foundCount; j++)
+            {
                 // If output signal is mame_stop or game_stop, then skip the entry
-                if (nemSignalList[j] == MAMESTOP || nemSignalList[j] == GAMESTOP) {
+                if (nemSignalList[j] == MAMESTOP || nemSignalList[j] == GAMESTOP)
+                {
                     continue;
                 }
                 out << nemSignalList[j] << "=\n";
@@ -971,6 +1052,17 @@ bool OutputHookerCore::checkINICommands(QStringList commandsNotChk, quint16 line
             {
                 subCmd = subCommands[j];
 
+                // Replace COM Port placeholder with COM Port number
+                QMapIterator<QString, QString> it(comPortPlaceholders);
+                while (it.hasNext())
+                {
+                    it.next();
+                    if (subCmd.contains(it.key()))
+                    {
+                        subCmd.replace(it.key(), it.value());
+                    }
+                }
+
                 // Check for %s%, if so replace with 0
                 if (subCmd.contains(SIGNALDATAVARIABLE))
                     subCmd.replace(SIGNALDATAVARIABLE, "0");
@@ -987,6 +1079,17 @@ bool OutputHookerCore::checkINICommands(QStringList commandsNotChk, quint16 line
         }
         else
         {
+            // Replace COM Port placeholder with COM Port number
+            QMapIterator<QString, QString> it(comPortPlaceholders);
+            while (it.hasNext())
+            {
+                it.next();
+                if (command.contains(it.key()))
+                {
+                    command.replace(it.key(), it.value());
+                }
+            }
+
             // Check for %s%, if so replace with 0
             if (command.contains(SIGNALDATAVARIABLE))
                 command.replace(SIGNALDATAVARIABLE, "0");
@@ -1252,7 +1355,7 @@ bool OutputHookerCore::checkINICommand(QString commandNotChk, quint16 lineNumber
         // LedWiz set pin state command
         if (commandNotChk.startsWith(LWSETSTATE, Qt::CaseInsensitive))
         {
-            // This will give 4 strings = 1: lws 2: ID  3: Pin  4: State
+            // This will give 4 strings = 1: lws  2: ID  3: Pin  4: State
             cmd = commandNotChk.split(' ', Qt::SkipEmptyParts);
 
             if (cmd.size() < 4)
@@ -1286,7 +1389,7 @@ bool OutputHookerCore::checkINICommand(QString commandNotChk, quint16 lineNumber
         // LedWiz set power level command
         else if (commandNotChk.startsWith(LWSETPOWER, Qt::CaseInsensitive))
         {
-            // This will give 4 strings = 1: lwp 2: ID  3: Pin  4: Power Level
+            // This will give 4 strings = 1: lwp  2: ID  3: Pin  4: Power Level
             cmd = commandNotChk.split(' ', Qt::SkipEmptyParts);
 
             if (cmd.size() < 4)
@@ -1329,7 +1432,7 @@ bool OutputHookerCore::checkINICommand(QString commandNotChk, quint16 lineNumber
         // LedWiz set RGB LED color command
         else if (commandNotChk.startsWith(LWSETCOLOR, Qt::CaseInsensitive))
         {
-            // This will give 6 strings = 1: lwc 2: ID  3: Pin  4: Red Value  5: Green Value  6: Blue Value
+            // This will give 6 strings = 1: lwc  2: ID  3: Pin  4: Red Value  5: Green Value  6: Blue Value
             cmd = commandNotChk.split(' ', Qt::SkipEmptyParts);
 
             if (cmd.size() < 6)
@@ -1390,7 +1493,7 @@ bool OutputHookerCore::checkINICommand(QString commandNotChk, quint16 lineNumber
         // LedWiz set pulse rate
         else if (commandNotChk.startsWith(LWSETPULSE, Qt::CaseInsensitive))
         {
-            // This will give 3 strings = 1: lwr 2: ID  3: Pulse Rate
+            // This will give 3 strings = 1: lwr  2: ID  3: Pulse Rate
             cmd = commandNotChk.split(' ', Qt::SkipEmptyParts);
 
             if (cmd.size() < 3)
@@ -1453,7 +1556,7 @@ bool OutputHookerCore::checkINICommand(QString commandNotChk, quint16 lineNumber
         // PacDrive set pin state command
         if (commandNotChk.startsWith(PACSETSTATE, Qt::CaseInsensitive))
         {
-            // This will give 4 strings = 1: uls 2: ID  3: Pin  4: State
+            // This will give 4 strings = 1: uls  2: ID  3: Pin  4: State
             cmd = commandNotChk.split(' ', Qt::SkipEmptyParts);
 
             if (cmd.size() < 4)
@@ -1527,10 +1630,44 @@ bool OutputHookerCore::checkINICommand(QString commandNotChk, quint16 lineNumber
             // Good command
             return true;
         }
+        // PacDrive set light fade time command
+        else if (commandNotChk.startsWith(PACSETFADETIME, Qt::CaseInsensitive))
+        {
+            // This will give 3 strings = 1: ulf  2: ID  3: Fade Time
+            cmd = commandNotChk.split(' ', Qt::SkipEmptyParts);
+
+            if (cmd.size() < 3)
+            {
+                QString errorMsg = "Command requires 2 parameters (ID, Fade Time)!\nLine Number: " + QString::number(lineNumber) + "\nFile: " + gameName + ENDOFINIFILE;;
+                emit showErrorMessage("Ultimarc - Set LED Fade Time - Error", errorMsg);
+                return false;
+            }
+
+            cmd[1].toUInt(&isNumber);
+
+            if (!isNumber)
+            {
+                QString errorMsg = "Device number is not a number!\nLine Number: " + QString::number(lineNumber) + "\nDevice: " + cmd[1] + "\nFile: " + gameName + ENDOFINIFILE;
+                emit showErrorMessage("Ultimarc - Set LED Fade Time - Error", errorMsg);
+                return false;
+            }
+
+            cmd[2].toUInt(&isNumber);
+
+            if (!isNumber)
+            {
+                QString errorMsg = "Fade time value is not a number!\nLine Number: " + QString::number(lineNumber) + "\nValue: " + cmd[2] + "\nFile: " + gameName + ENDOFINIFILE;
+                emit showErrorMessage("Ultimarc - Set LED Fade Time - Error", errorMsg);
+                return false;
+            }
+
+            // Good command
+            return true;
+        }
         // PacDrive set RGB LED color command
         else if (commandNotChk.startsWith(PACSETCOLOR, Qt::CaseInsensitive))
         {
-            // This will give 6 strings = 1: ulc 2: ID  3: Pin  4: Red Value  5: Green Value  6: Blue Value
+            // This will give 6 strings = 1: ulc  2: ID  3: Pin  4: Red Value  5: Green Value  6: Blue Value
             cmd = commandNotChk.split(' ', Qt::SkipEmptyParts);
 
             if (cmd.size() < 6)
@@ -1613,6 +1750,128 @@ bool OutputHookerCore::checkINICommand(QString commandNotChk, quint16 lineNumber
             // Good command
             return true;
         }
+    }
+    // TCP commands, starts with "ts"
+    else if (commandNotChk.startsWith(TCPCMDSTART, Qt::CaseInsensitive) == true)
+    {
+        // TCP connect command
+        if (commandNotChk.startsWith(TCPSOCKETCONNECT, Qt::CaseInsensitive))
+        {
+            // This will give 4 strings = 1: tsc  2: Socket  3: Address  4: Port
+            cmd = commandNotChk.split(' ', Qt::SkipEmptyParts);
+
+            if (cmd.size() < 4)
+            {
+                QString errorMsg = "Command requires 3 parameters (Socket, Address, Port)!\nLine Number: " + QString::number(lineNumber) + "\nFile: " + gameName + ENDOFINIFILE;;
+                emit showErrorMessage("TCP - Connect - Error", errorMsg);
+                return false;
+            }
+
+            cmd[1].toUInt(&isNumber);
+
+            if (!isNumber)
+            {
+                QString errorMsg = "Socket number is not a number!\nLine Number: " + QString::number(lineNumber) + "\nSocket: " + cmd[1] + "\nFile: " + gameName + ENDOFINIFILE;
+                emit showErrorMessage("TCP - Connect - Error", errorMsg);
+                return false;
+            }
+
+            cmd[3].toUInt(&isNumber);
+
+            if (!isNumber)
+            {
+                QString errorMsg = "Port number is not a number!\nLine Number: " + QString::number(lineNumber) + "\nPort: " + cmd[3] + "\nFile: " + gameName + ENDOFINIFILE;
+                emit showErrorMessage("TCP - Connect - Error", errorMsg);
+                return false;
+            }
+
+            // Good command
+            return true;
+        }
+        // TCP disconnect command
+        else if (commandNotChk.startsWith(TCPSOCKETDISCONNECT, Qt::CaseInsensitive))
+        {
+            // This will give 2 strings = 1: tsd  2: Socket
+            cmd = commandNotChk.split(' ', Qt::SkipEmptyParts);
+
+            if (cmd.size() < 2)
+            {
+                QString errorMsg = "Command requires 1 parameter (Socket)!\nLine Number: " + QString::number(lineNumber) + "\nFile: " + gameName + ENDOFINIFILE;;
+                emit showErrorMessage("TCP - Disconnect - Error", errorMsg);
+                return false;
+            }
+
+            cmd[1].toUInt(&isNumber);
+
+            if (!isNumber)
+            {
+                QString errorMsg = "Socket number is not a number!\nLine Number: " + QString::number(lineNumber) + "\nSocket: " + cmd[1] + "\nFile: " + gameName + ENDOFINIFILE;
+                emit showErrorMessage("TCP - Disconnect - Error", errorMsg);
+                return false;
+            }
+
+            // Good command
+            return true;
+        }
+        // TCP send command
+        else if (commandNotChk.startsWith(TCPSOCKETSEND, Qt::CaseInsensitive))
+        {
+            // This will give 3 strings = 1: tss  2: Socket  3: Command
+            cmd = commandNotChk.split(' ', Qt::SkipEmptyParts);
+
+            if (cmd.size() < 3)
+            {
+                QString errorMsg = "Command requires 2 parameters (Socket, Command)!\nLine Number: " + QString::number(lineNumber) + "\nFile: " + gameName + ENDOFINIFILE;;
+                emit showErrorMessage("TCP - Send Command - Error", errorMsg);
+                return false;
+            }
+
+            cmd[1].toUInt(&isNumber);
+
+            if (!isNumber)
+            {
+                QString errorMsg = "Socket number is not a number!\nLine Number: " + QString::number(lineNumber) + "\nSocket: " + cmd[1] + "\nFile: " + gameName + ENDOFINIFILE;
+                emit showErrorMessage("TCP - Send Command - Error", errorMsg);
+                return false;
+            }
+
+            // Good command
+            return true;
+        }
+    }
+    // UDP send command
+    else if (commandNotChk.startsWith(UDPSOCKETSEND, Qt::CaseInsensitive))
+    {
+        // This will give 5 strings = 1: udp  2: Type  3: Address  4: Port  5: Command
+        cmd = commandNotChk.split(' ', Qt::SkipEmptyParts);
+
+        if (cmd.size() < 5)
+        {
+            QString errorMsg = "Command requires 4 parameters (Type, Address, Port, Command)!\nLine Number: " + QString::number(lineNumber) + "\nFile: " + gameName + ENDOFINIFILE;;
+            emit showErrorMessage("UDP - Send Command - Error", errorMsg);
+            return false;
+        }
+
+        cmd[1].toUInt(&isNumber);
+
+        if (!isNumber)
+        {
+            QString errorMsg = "Type number is not a number!\nLine Number: " + QString::number(lineNumber) + "\nType: " + cmd[1] + "\nFile: " + gameName + ENDOFINIFILE;
+            emit showErrorMessage("UDP - Send Command - Error", errorMsg);
+            return false;
+        }
+
+        cmd[3].toUInt(&isNumber);
+
+        if (!isNumber)
+        {
+            QString errorMsg = "Port number is not a number!\nLine Number: " + QString::number(lineNumber) + "\nPort: " + cmd[3] + "\nFile: " + gameName + ENDOFINIFILE;
+            emit showErrorMessage("UDP - Send Command - Error", errorMsg);
+            return false;
+        }
+
+        // Good command
+        return true;
     }
     // Launch and Close Application commands, starts with "ap"
     else if (commandNotChk.startsWith(APPCMDSTART, Qt::CaseInsensitive) == true)
@@ -1832,6 +2091,17 @@ void OutputHookerCore::executeINICommands(const QStringList &commands, const QSt
     {
         QString currentCommand = commands[i];
 
+        // Replace COM Port placeholder with COM Port number
+        QMapIterator<QString, QString> it(comPortPlaceholders);
+        while (it.hasNext())
+        {
+            it.next();
+            if (currentCommand.contains(it.key()))
+            {
+                currentCommand.replace(it.key(), it.value());
+            }
+        }
+
         // Branching logic with "|"
         if (currentCommand.contains('|'))
         {
@@ -1928,7 +2198,7 @@ void OutputHookerCore::executeINICommands(const QStringList &commands, const QSt
             // LedWiz set pin state command
             if (currentCommand.startsWith(LWSETSTATE, Qt::CaseInsensitive))
             {
-                // This will give 4 strings = 1: lws 2: ID  3: Pin  4: State
+                // This will give 4 strings = 1: lws  2: ID  3: Pin  4: State
                 cmd = currentCommand.split(' ', Qt::SkipEmptyParts);
 
                 if (cmd.size() >= 4)
@@ -1942,7 +2212,7 @@ void OutputHookerCore::executeINICommands(const QStringList &commands, const QSt
             // LedWiz set power level command
             else if (currentCommand.startsWith(LWSETPOWER, Qt::CaseInsensitive))
             {
-                // This will give 4 strings = 1: lwp 2: ID  3: Pin  4: Power Level
+                // This will give 4 strings = 1: lwp  2: ID  3: Pin  4: Power Level
                 cmd = currentCommand.split(' ', Qt::SkipEmptyParts);
 
                 if (cmd.size() >= 4)
@@ -1956,7 +2226,7 @@ void OutputHookerCore::executeINICommands(const QStringList &commands, const QSt
             // LedWiz set RGB LED color command
             else if (currentCommand.startsWith(LWSETCOLOR, Qt::CaseInsensitive))
             {
-                // This will give 6 strings = 1: lwc 2: ID  3: Pin  4: Red Value  5: Green Value  6: Blue Value
+                // This will give 6 strings = 1: lwc  2: ID  3: Pin  4: Red Value  5: Green Value  6: Blue Value
                 cmd = currentCommand.split(' ', Qt::SkipEmptyParts);
 
                 if (cmd.size() >= 6)
@@ -1972,7 +2242,7 @@ void OutputHookerCore::executeINICommands(const QStringList &commands, const QSt
             // LedWiz set pulse rate command
             else if (currentCommand.startsWith(LWSETPULSE, Qt::CaseInsensitive))
             {
-                // This will give 4 strings = 1: lwr 2: ID  3: Pin  4: Pulse Rate
+                // This will give 4 strings = 1: lwr  2: ID  3: Pin  4: Pulse Rate
                 cmd = currentCommand.split(' ', Qt::SkipEmptyParts);
 
                 if (cmd.size() >= 4)
@@ -2001,7 +2271,7 @@ void OutputHookerCore::executeINICommands(const QStringList &commands, const QSt
             // PacDrive set pin state command
             if (currentCommand.startsWith(PACSETSTATE, Qt::CaseInsensitive))
             {
-                // This will give 4 strings = 1: uls 2: ID  3: Pin  4: State
+                // This will give 4 strings = 1: uls  2: ID  3: Pin  4: State
                 cmd = currentCommand.split(' ', Qt::SkipEmptyParts);
 
                 if (cmd.size() >= 4)
@@ -2026,10 +2296,23 @@ void OutputHookerCore::executeINICommands(const QStringList &commands, const QSt
                     setPacDriveLightIntensity(pacID, pacPin, pacIntensity);
                 }
             }
+            // PacDrive set light fade time command
+            else if (currentCommand.startsWith(PACSETFADETIME, Qt::CaseInsensitive))
+            {
+                // This will give 3 strings = 1: ulf  2: ID  3: Fade Time
+                cmd = currentCommand.split(' ', Qt::SkipEmptyParts);
+
+                if (cmd.size() >= 3)
+                {
+                    quint8 pacID = cmd[1].toUInt() - 1;
+                    quint8 pacFadetime = cmd[2].toUInt();
+                    setPacDriveLightFadeTime(pacID, pacFadetime);
+                }
+            }
             // PacDrive set RGB LED color command
             else if (currentCommand.startsWith(LWSETCOLOR, Qt::CaseInsensitive))
             {
-                // This will give 6 strings = 1: ulc 2: ID  3: Pin  4: Red Value  5: Green Value  6: Blue Value
+                // This will give 6 strings = 1: ulc  2: ID  3: Pin  4: Red Value  5: Green Value  6: Blue Value
                 cmd = currentCommand.split(' ', Qt::SkipEmptyParts);
 
                 if (cmd.size() >= 6)
@@ -2053,6 +2336,65 @@ void OutputHookerCore::executeINICommands(const QStringList &commands, const QSt
                     quint8 pacID = cmd[1].toUInt() - 1;
                     turnAllPacDriveLightsOff(pacID);
                 }
+            }
+        }
+        // TCP commands, starts with "ts"
+        else if (currentCommand.startsWith(TCPCMDSTART, Qt::CaseInsensitive) == true)
+        {
+            // TCP connect command
+            if (currentCommand.startsWith(TCPSOCKETCONNECT, Qt::CaseInsensitive))
+            {
+                // This will give 4 strings = 1: tsc  2: Socket  3: Adress  4: Port
+                cmd = currentCommand.split(' ', Qt::SkipEmptyParts);
+
+                if (cmd.size() >= 4)
+                {
+                    quint8 socket = cmd[1].toUInt();
+                    QString host = cmd[2];
+                    quint16 port = cmd[3].toUInt();
+                    tcpConnect(socket, host, port);
+                }
+            }
+            // TCP disconnect command
+            else if (currentCommand.startsWith(TCPSOCKETDISCONNECT, Qt::CaseInsensitive))
+            {
+                // This will give 2 strings = 1: tsd  2: Socket
+                cmd = currentCommand.split(' ', Qt::SkipEmptyParts);
+
+                if (cmd.size() >= 2)
+                {
+                    quint8 socket = cmd[1].toUInt();
+                    tcpDisconnect(socket);
+                }
+            }
+            // TCP send command
+            else if (currentCommand.startsWith(TCPSOCKETSEND, Qt::CaseInsensitive))
+            {
+                // This will give 3 strings = 1: tss  2: Socket  3: Command
+                cmd = currentCommand.split(' ', Qt::SkipEmptyParts);
+
+                if (cmd.size() >= 3)
+                {
+                    quint8 socket = cmd[1].toUInt();
+                    QString tempCommand = currentCommand.section(' ', 2, -1) + "\n";
+                    QByteArray command = tempCommand.toUtf8();
+                    tcpSendCommand(socket, command);
+                }
+            }
+        }
+        // UDP send command
+        else if (currentCommand.startsWith(UDPSOCKETSEND, Qt::CaseInsensitive))
+        {
+            // This will give 5 strings = 1: udp  2: Type  3: Address  4: Port  5: Command
+            cmd = currentCommand.split(' ', Qt::SkipEmptyParts);
+
+            if (cmd.size() >= 5)
+            {
+                quint8 type = cmd[1].toUInt();
+                QString address = cmd[2];
+                quint16 port = cmd[3].toUInt();
+                QString command = currentCommand.section(' ', 4, -1);
+                udpSendCommand(type, address, port, command);
             }
         }
         // Launch and Close Application commands, starts with "ap"
@@ -2175,6 +2517,12 @@ void OutputHookerCore::setPacDriveLightIntensity(quint8 pacID, quint8 pacPin, qu
     emit setPdLightIntensity(pacID, pacPin, pacIntensity);
 }
 
+// Set PacDrive light fade time
+void OutputHookerCore::setPacDriveLightFadeTime(quint8 pacID, quint8 pacFadetime)
+{
+    emit setPdLightFadeTime(pacID, pacFadetime);
+}
+
 // Set PacDrive RGB LED color
 void OutputHookerCore::setPacDriveRGBColor(quint8 pacID, quint8 pacPin, quint8 pacValueR, quint8 pacValueG, quint8 pacValueB)
 {
@@ -2185,6 +2533,30 @@ void OutputHookerCore::setPacDriveRGBColor(quint8 pacID, quint8 pacPin, quint8 p
 void OutputHookerCore::turnAllPacDriveLightsOff(quint8 pacID)
 {
     emit turnAllPdLightsOff(pacID);
+}
+
+// TCP connect
+void OutputHookerCore::tcpConnect(quint8 socket, QString host, quint16 port)
+{
+    emit connectTcpHost(socket, host, port);
+}
+
+// TCP disconnect
+void OutputHookerCore::tcpDisconnect(quint8 socket)
+{
+    emit disconnectTcpHost(socket);
+}
+
+// Send TCP command
+void OutputHookerCore::tcpSendCommand(quint8 socket, QByteArray command)
+{
+    emit sendTcpCommand(socket, command);
+}
+
+// Send UDP command
+void OutputHookerCore::udpSendCommand(quint8 type, QString address, quint16 port, QString command)
+{
+    emit sendUdpCommand(type, address, port, command);
 }
 
 // Launch Application
@@ -2249,6 +2621,9 @@ void OutputHookerCore::clearOnDisconnect()
     // If game files are still open, close them
     if (iniFileLoaded)
     {
+        // Run the commands attached to 'mame_stop'
+        processINICommands(MAMESTOP, "", true);
+
         // If INI file loaded, must search for any new signal(s) not in the file
         // These signals are appended to the INI game file and closed
         quint8 foundCount = 0;
@@ -2286,9 +2661,11 @@ void OutputHookerCore::clearOnDisconnect()
             }
             QTextStream out(&iniFileTemp);
 
-            for (j = 0; j < foundCount; j++){
+            for (j = 0; j < foundCount; j++)
+            {
                 // If output signal is mame_stop or game_stop, then skip the entry
-                if (nemSignalList[j] == MAMESTOP || nemSignalList[j] == GAMESTOP) {
+                if (nemSignalList[j] == MAMESTOP || nemSignalList[j] == GAMESTOP)
+                {
                     continue;
                 }
                 out << nemSignalList[j] << "=\n";

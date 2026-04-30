@@ -23,6 +23,7 @@ qt_add_executable(OutputHooker
     core/WinMsgModule.h core/WinMsgModule.cpp
     core/TCPSocketModule.h core/TCPSocketModule.cpp
     core/COMPortModule.h core/COMPortModule.cpp
+    core/NetCmdModule.h core/NetCmdModule.cpp
     core/PacDriveModule.h core/PacDriveModule.cpp
     core/LedWizModule.h core/LedWizModule.cpp
     gui/TestOutputWindow.h gui/TestOutputWindow.cpp gui/TestOutputWindow.ui

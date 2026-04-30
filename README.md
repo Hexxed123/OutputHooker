@@ -14,9 +14,12 @@ This tool acts as the essential bridge between emulators and your arcade hardwar
   - This means that any emulator, launcher, or tool works with **OutputHooker**!
 
 - **Hardware Support**
-  - Lightguns with COM Port support (GUN4IR, ...)
+  - Lightguns with COM Port support (Blamcon, Fusion, GUN4IR, OpenFIRE, RS MX24, RS Reaper, X-Gunner)
+  - Lightguns with TCP support (Sinden)
   - LEDWiz boards (Original, Clone, Pinscape)
   - Ultimarc LED boards
+  - WLED boards (UDP Realtime)
+  - Any hardware that receives TCP/UDP commands
 
 - **INI Support**
   - MAMEHooker INI files and KeyStates are supported

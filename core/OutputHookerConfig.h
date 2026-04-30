@@ -15,36 +15,42 @@ public:
     explicit OutputHookerConfig(QObject *parent = nullptr);
     ~OutputHookerConfig();
 
-    //Save and load settings
+    // Save and load settings
     void saveSettings();
     void loadSettings();
 
-    //Get & Set settings functions
-    //Get a notification if a new game is found
+    // Get & Set settings functions
+    // Get a notification if a new game is found
     bool getUseNewOutputsNotification();
     void setUseNewOutputsNotification(bool unoNotification);
 
-    //Save new outputs to default.ini
+    // Save new outputs to default.ini
     bool getSaveNewOutputsToDefaultINI();
     void setSaveNewOutputsToDefaultINI(bool snotDefaultINI);
 
-    //Use Multi-Threading
+    // Use Multi-Threading
     bool getUseMultiThreading();
     void setUseMultiThreading(bool umThreading);
 
-    //Ignore Serial COM Port checks for debug
+    // Get COM Port placeholders
+    QMap<QString, QString> getComPortPlaceholders();
+
+    // Ignore Serial COM Port checks for debug
     bool getSerialPortWriteCheckBypass();
     void setSerialPortWriteCheckBypass(bool spwCB);
 
 private:
-    //Settings file
+    // Settings file
     QString settingsFile;
 
-    //Settings
+    // Settings
     bool useNewOutputsNotification;
     bool saveNewOutputsToDefaultINI;
     bool useMultiThreading;
     bool bypassSerialWriteChecks;
+
+    // QMap - COM Port placeholders
+    QMap<QString, QString> comPortPlaceholders;
 };
 
 #endif // OUTPUTHOOKERCONFIG_H

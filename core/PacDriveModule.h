@@ -25,6 +25,9 @@ public slots:
     // Set light intensity
     void setLightIntensity(quint8 id, quint8 pin, quint8 intensity);
 
+    // Set light fade time
+    void setLightFadeTime(quint8 id, quint8 fadetime);
+
     // Set RGB LED color
     void setRGBColor(quint8 id, quint8 pin, quint8 valueR, quint8 valueG, quint8 valueB);
 

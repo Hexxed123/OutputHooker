@@ -6,10 +6,10 @@
 #include <windows.h>
 
 // Version info
-#define VERSION                 "1.2.1"
+#define VERSION                 "1.3.0"
 #define VERSIONMAIN             1
-#define VERSIONMID              2
-#define VERSIONLAST             1
+#define VERSIONMID              3
+#define VERSIONLAST             0
 
 // Settings
 #define SETTINGSFILE            "OutputHooker.ini"
@@ -71,8 +71,14 @@
 #define PACCMDSTART             "ul"
 #define PACSETSTATE             "uls"
 #define PACSETINTENSITY         "uli"
+#define PACSETFADETIME          "ulf"
 #define PACSETCOLOR             "ulc"
 #define PACKILLALLLEDS          "ulk"
+#define TCPCMDSTART             "ts"
+#define TCPSOCKETCONNECT        "tsc"
+#define TCPSOCKETDISCONNECT     "tsd"
+#define TCPSOCKETSEND           "tss"
+#define UDPSOCKETSEND           "udp"
 #define APPCMDSTART             "ap"
 #define APPLAUNCH               "apl"
 #define APPCLOSE                "apc"
@@ -80,14 +86,57 @@
 #define NULLCMD                 "nll"
 #define SIGNALDATAVARIABLE      "%s%"
 
+enum CategoryType
+{
+    CatAll,
+    CatComPort,
+    CatBlamcon,
+    CatFusion,
+    CatGun4ir,
+    CatOpenFire,
+    CatRsMX24,
+    CatRsReaper,
+    CatSinden,
+    CatXgunner,
+    CatLedWiz,
+    CatUltimarc,
+    CatNetwork,
+    CatApplication,
+    CatAudio,
+    CatMisc
+};
+
 enum CommandType
 {
-    CmdNone = 0,
+    // COM Port
     CmdComOpen,
     CmdComClose,
     CmdComWrite,
     CmdComSet,
-    CmdGun4irIGF,
+    // Blamcon
+    CmdBlamconCPO,
+    CmdBlamconCPC,
+    CmdBlamconSSM,
+    CmdBlamconESM,
+    CmdBlamconIM,
+    CmdBlamconOR,
+    CmdBlamconPM,
+    CmdBlamconAR,
+    CmdBlamconRM,
+    CmdBlamconCP,
+    CmdBlamconIGF,
+    // Fusion
+    CmdFusionCPO,
+    CmdFusionCPC,
+    CmdFusionSSM,
+    CmdFusionESM,
+    CmdFusionFM,
+    CmdFusionJM,
+    CmdFusionPM,
+    CmdFusionIGF,
+    // GUN4IR
+    CmdGun4irCPO,
+    CmdGun4irCPC,
     CmdGun4irSSM,
     CmdGun4irESM,
     CmdGun4irIM,
@@ -98,18 +147,76 @@ enum CommandType
     CmdGun4irRL,
     CmdGun4irRO,
     CmdGun4irFA,
+    CmdGun4irIGF,
+    // OpenFIRE
+    CmdOpenFireCPO,
+    CmdOpenFireCPC,
+    CmdOpenFireSSM,
+    CmdOpenFireESM,
+    CmdOpenFireIM,
+    CmdOpenFireOR,
+    CmdOpenFirePM,
+    CmdOpenFireAR,
+    CmdOpenFireRO,
+    CmdOpenFireFA,
+    CmdOpenFireDM,
+    CmdOpenFirePO,
+    CmdOpenFireIGF,
+    // Retro Shooter MX24
+    CmdRsMX24CPO,
+    CmdRsMX24CPC,
+    CmdRsMX24SSM,
+    CmdRsMX24ESM,
+    CmdRsMX24SCM,
+    CmdRsMX24IGF,
+    // Retro Shooter Reaper
+    CmdRsReaperCPO,
+    CmdRsReaperCPC,
+    CmdRsReaperSSM,
+    CmdRsReaperESM,
+    CmdRsReaperIM,
+    CmdRsReaperOR,
+    CmdRsReaperAR,
+    CmdRsReaperLA,
+    CmdRsReaperIGF,
+    // Sinden
+    CmdSindenTSC,
+    CmdSindenTSD,
+    CmdSindenIGF,
+    CmdSindenRM,
+    CmdSindenAP,
+    CmdSindenSS,
+    // X-Gunner
+    CmdXgunnerCPO,
+    CmdXgunnerCPC,
+    CmdXgunnerSSM,
+    CmdXgunnerESM,
+    CmdXgunnerIM,
+    CmdXgunnerAR,
+    CmdXgunnerIGF,
+    // LEDWiz
     CmdLedWizState,
     CmdLedWizPower,
     CmdLedWizColor,
     CmdLedWizPulse,
     CmdLedWizKill,
+    // Ultimarc
     CmdUltimarcState,
     CmdUltimarcIntensity,
+    CmdUltimarcFadeTime,
     CmdUltimarcColor,
     CmdUltimarcKill,
+    // Network (TCP/UDP)
+    CmdTcpConnect,
+    CmdTcpDisconnect,
+    CmdTcpSend,
+    CmdUdpSend,
+    // External Application
     CmdAppLaunch,
     CmdAppClose,
+    // Audio
     CmdPlayWav,
+    // Null
     CmdNull
 };
 

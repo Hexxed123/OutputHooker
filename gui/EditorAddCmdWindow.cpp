@@ -1,3 +1,9 @@
+/*
+ * Original Copyright (c) 2026 PolybiusExtreme
+ *
+ * Licensed under the GNU GPLv3.
+ */
+
 #include "EditorAddCmdWindow.h"
 #include "ui_EditorAddCmdWindow.h"
 
@@ -16,22 +22,25 @@ EditorAddCmdWindow::EditorAddCmdWindow(QWidget *parent)
 
     ui->horizontalLayout_Parameter->setAlignment(Qt::AlignLeft);
 
-    ui->cbCategory->addItem("All Functions",        CatAll);
-    ui->cbCategory->addItem("COM Port",             CatComPort);
-    ui->cbCategory->addItem("Blamcon Lightgun",     CatBlamcon);
-    ui->cbCategory->addItem("Fusion Lightgun",      CatFusion);
-    ui->cbCategory->addItem("GUN4IR Lightgun",      CatGun4ir);
-    ui->cbCategory->addItem("OpenFIRE Lightgun",    CatOpenFire);
-    ui->cbCategory->addItem("RS MX24 Lightgun",     CatRsMX24);
-    ui->cbCategory->addItem("RS Reaper Lightgun",   CatRsReaper);
-    ui->cbCategory->addItem("Sinden Lightgun",      CatSinden);
-    ui->cbCategory->addItem("X-Gunner Lightgun",    CatXgunner);
-    ui->cbCategory->addItem("LEDWiz Controller",    CatLedWiz);
-    ui->cbCategory->addItem("Ultimarc Controller",  CatUltimarc);
-    ui->cbCategory->addItem("Network (TCP/UDP)",    CatNetwork);
-    ui->cbCategory->addItem("External Application", CatApplication);
-    ui->cbCategory->addItem("Audio",                CatAudio);
-    ui->cbCategory->addItem("Miscellaneous",        CatMisc);
+    ui->cbCategory->addItem("All Functions",                       CatAll);
+    ui->cbCategory->addItem("COM Port",                            CatComPort);
+    ui->cbCategory->addItem("Blamcon Lightgun",                    CatBlamcon);
+    ui->cbCategory->addItem("Fusion Lightgun",                     CatFusion);
+    ui->cbCategory->addItem("GUN4IR Lightgun",                     CatGun4ir);
+    ui->cbCategory->addItem("OpenFIRE Lightgun",                   CatOpenFire);
+    ui->cbCategory->addItem("Retro Shooter - MX24 Lightgun",       CatRsMX24);
+    ui->cbCategory->addItem("Retro Shooter - RS3 Reaper Lightgun", CatRsReaper);
+    ui->cbCategory->addItem("Sinden Lightgun",                     CatSinden);
+    ui->cbCategory->addItem("X-Gunner Lightgun",                   CatXgunner);
+    ui->cbCategory->addItem("Alien Positional Gun",                CatAlien);
+    ui->cbCategory->addItem("LEDWiz Controller",                   CatLedWiz);
+    ui->cbCategory->addItem("Ultimarc Controller",                 CatUltimarc);
+    ui->cbCategory->addItem("Gamecontroller",                      CatSDL3FFB);
+    ui->cbCategory->addItem("Generic HID",                         CatUsbHid);
+    ui->cbCategory->addItem("Network (TCP/UDP)",                   CatNetwork);
+    ui->cbCategory->addItem("External Application",                CatApplication);
+    ui->cbCategory->addItem("Audio",                               CatAudio);
+    ui->cbCategory->addItem("Miscellaneous",                       CatMisc);
 
     ui->cbCategory->setStyleSheet("QComboBox { combobox-popup: 0; }");
     ui->cbCategory->view()->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
@@ -55,7 +64,7 @@ EditorAddCmdWindow::EditorAddCmdWindow(QWidget *parent)
     validator255 = new QIntValidator(0, 255, this);
     validator65535 = new QIntValidator(0, 65535, this);
 
-    ui->lineEditCommand->setEnabled(false);
+    ui->lineEditCommand->setReadOnly(true);
 
     // Handle category ComboBox
     connect(ui->cbCategory, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EditorAddCmdWindow::handleCategoryChanged);
@@ -311,6 +320,33 @@ FunctionCommand EditorAddCmdWindow::getCommand() const
         cmd.param2 = ui->cbParameter2->currentData().toString();
         break;
 
+    case CmdAlienLED:
+        cmd.commandCode = USBHIDCMD;
+        cmd.param1 = ui->cbParameter1->currentText();
+        cmd.param2 = ui->lineEditParameter2->text();
+        cmd.param3 = ui->lineEditParameter3->text();
+        cmd.param4 = ui->lineEditParameter4->text();
+        cmd.param5 = ui->lineEditParameter5->text();
+        break;
+
+    case CmdAlienRecoil:
+        cmd.commandCode = USBHIDCMD;
+        cmd.param1 = ui->cbParameter1->currentText();
+        cmd.param2 = ui->lineEditParameter2->text();
+        cmd.param3 = ui->lineEditParameter3->text();
+        cmd.param4 = ui->lineEditParameter4->text();
+        cmd.param5 = ui->cbParameter5->currentData().toString();
+        break;
+
+    case CmdAlienCounter:
+        cmd.commandCode = USBHIDCMD;
+        cmd.param1 = ui->cbParameter1->currentText();
+        cmd.param2 = ui->lineEditParameter2->text();
+        cmd.param3 = ui->lineEditParameter3->text();
+        cmd.param4 = ui->lineEditParameter4->text();
+        cmd.param5 = ui->cbParameter4->currentData().toString() + ui->cbParameter5->currentData().toString();
+        break;
+
     case CmdLedWizState:
         cmd.commandCode = LWSETSTATE;
         cmd.param1 = ui->cbParameter1->currentText();
@@ -377,6 +413,30 @@ FunctionCommand EditorAddCmdWindow::getCommand() const
     case CmdUltimarcKill:
         cmd.commandCode = PACKILLALLLEDS;
         cmd.param1 = ui->cbParameter1->currentText();
+        break;
+
+    case CmdSDL3FFB:
+        cmd.commandCode = SDL3FFB;
+        cmd.param1 = ui->cbParameter1->currentText();
+        cmd.param2 = ui->cbParameter2->currentData().toString();
+        break;
+
+    case CmdSDL3FFA:
+        cmd.commandCode = SDL3FFA;
+        cmd.param1 = ui->cbParameter1->currentText();
+        cmd.param2 = ui->cbParameter2->currentData().toString();
+        cmd.param3 = ui->lineEditParameter3->text();
+        cmd.param4 = ui->lineEditParameter4->text();
+        cmd.param5 = ui->lineEditParameter5->text();
+        break;
+
+    case CmdUsbHidSend:
+        cmd.commandCode = USBHIDCMD;
+        cmd.param1 = ui->cbParameter1->currentText();
+        cmd.param2 = ui->lineEditParameter2->text();
+        cmd.param3 = ui->lineEditParameter3->text();
+        cmd.param4 = ui->lineEditParameter4->text();
+        cmd.param5 = ui->lineEditParameter5->text();
         break;
 
     case CmdTcpConnect:
@@ -496,6 +556,7 @@ void EditorAddCmdWindow::updateCommandDisplay()
     }
 
     ui->lineEditCommand->setText(command);
+    ui->lineEditCommand->setCursorPosition(0);
 }
 
 // Clear error style
@@ -588,157 +649,175 @@ void EditorAddCmdWindow::handleCategoryChanged(int index)
 
     if (categoryData == CatAll || categoryData == CatComPort)
     {
-        addCmd("COM Port - Open",               CmdComOpen);
-        addCmd("COM Port - Close",              CmdComClose);
-        addCmd("COM Port - Write",              CmdComWrite);
-        addCmd("COM Port - Set Settings",       CmdComSet);
+        addCmd("COM Port - Open",                CmdComOpen);
+        addCmd("COM Port - Close",               CmdComClose);
+        addCmd("COM Port - Write",               CmdComWrite);
+        addCmd("COM Port - Set Settings",        CmdComSet);
     }
 
     if (categoryData == CatAll || categoryData == CatBlamcon)
     {
-        addCmd("Blamcon - Open COM Port",       CmdBlamconCPO);
-        addCmd("Blamcon - Close COM Port",      CmdBlamconCPC);
-        addCmd("Blamcon - Start Serial Mode",   CmdBlamconSSM);
-        addCmd("Blamcon - Exit Serial Mode",    CmdBlamconESM);
-        addCmd("Blamcon - Input Mode",          CmdBlamconIM);
-        addCmd("Blamcon - Offscreen Reload",    CmdBlamconOR);
-        addCmd("Blamcon - Pedal Mode",          CmdBlamconPM);
-        addCmd("Blamcon - Aspect Ratio",        CmdBlamconAR);
-        addCmd("Blamcon - Recoil Mode",         CmdBlamconRM);
-        addCmd("Blamcon - Calibration Profile", CmdBlamconCP);
-        addCmd("Blamcon - In-Game Feedback",    CmdBlamconIGF);
+        addCmd("Blamcon - Open COM Port",        CmdBlamconCPO);
+        addCmd("Blamcon - Close COM Port",       CmdBlamconCPC);
+        addCmd("Blamcon - Start Serial Mode",    CmdBlamconSSM);
+        addCmd("Blamcon - Exit Serial Mode",     CmdBlamconESM);
+        addCmd("Blamcon - Input Mode",           CmdBlamconIM);
+        addCmd("Blamcon - Offscreen Reload",     CmdBlamconOR);
+        addCmd("Blamcon - Pedal Mode",           CmdBlamconPM);
+        addCmd("Blamcon - Aspect Ratio",         CmdBlamconAR);
+        addCmd("Blamcon - Recoil Mode",          CmdBlamconRM);
+        addCmd("Blamcon - Calibration Profile",  CmdBlamconCP);
+        addCmd("Blamcon - In-Game Feedback",     CmdBlamconIGF);
     }
 
     if (categoryData == CatAll || categoryData == CatFusion)
     {
-        addCmd("Fusion - Open COM Port",        CmdFusionCPO);
-        addCmd("Fusion - Close COM Port",       CmdFusionCPC);
-        addCmd("Fusion - Start Serial Mode",    CmdFusionSSM);
-        addCmd("Fusion - Exit Serial Mode",     CmdFusionESM);
-        addCmd("Fusion - Fire Mode",            CmdFusionFM);
-        addCmd("Fusion - Joystick Mode",        CmdFusionJM);
-        addCmd("Fusion - Player Mapping",       CmdFusionPM);
-        addCmd("Fusion - In-Game Feedback",     CmdFusionIGF);
+        addCmd("Fusion - Open COM Port",         CmdFusionCPO);
+        addCmd("Fusion - Close COM Port",        CmdFusionCPC);
+        addCmd("Fusion - Start Serial Mode",     CmdFusionSSM);
+        addCmd("Fusion - Exit Serial Mode",      CmdFusionESM);
+        addCmd("Fusion - Fire Mode",             CmdFusionFM);
+        addCmd("Fusion - Joystick Mode",         CmdFusionJM);
+        addCmd("Fusion - Player Mapping",        CmdFusionPM);
+        addCmd("Fusion - In-Game Feedback",      CmdFusionIGF);
     }
 
     if (categoryData == CatAll || categoryData == CatGun4ir)
     {
-        addCmd("GUN4IR - Open COM Port",        CmdGun4irCPO);
-        addCmd("GUN4IR - Close COM Port",       CmdGun4irCPC);
-        addCmd("GUN4IR - Start Serial Mode",    CmdGun4irSSM);
-        addCmd("GUN4IR - Exit Serial Mode",     CmdGun4irESM);
-        addCmd("GUN4IR - Input Mode",           CmdGun4irIM);
-        addCmd("GUN4IR - Offscreen Reload",     CmdGun4irOR);
-        addCmd("GUN4IR - Pedal Mode",           CmdGun4irPM);
-        addCmd("GUN4IR - Aspect Ratio",         CmdGun4irAR);
-        addCmd("GUN4IR - Temperature Sensor",   CmdGun4irTS);
-        addCmd("GUN4IR - Auto Reload",          CmdGun4irRL);
-        addCmd("GUN4IR - Rumble Only",          CmdGun4irRO);
-        addCmd("GUN4IR - Full Auto",            CmdGun4irFA);
-        addCmd("GUN4IR - In-Game Feedback",     CmdGun4irIGF);
+        addCmd("GUN4IR - Open COM Port",         CmdGun4irCPO);
+        addCmd("GUN4IR - Close COM Port",        CmdGun4irCPC);
+        addCmd("GUN4IR - Start Serial Mode",     CmdGun4irSSM);
+        addCmd("GUN4IR - Exit Serial Mode",      CmdGun4irESM);
+        addCmd("GUN4IR - Input Mode",            CmdGun4irIM);
+        addCmd("GUN4IR - Offscreen Reload",      CmdGun4irOR);
+        addCmd("GUN4IR - Pedal Mode",            CmdGun4irPM);
+        addCmd("GUN4IR - Aspect Ratio",          CmdGun4irAR);
+        addCmd("GUN4IR - Temperature Sensor",    CmdGun4irTS);
+        addCmd("GUN4IR - Auto Reload",           CmdGun4irRL);
+        addCmd("GUN4IR - Rumble Only",           CmdGun4irRO);
+        addCmd("GUN4IR - Full Auto",             CmdGun4irFA);
+        addCmd("GUN4IR - In-Game Feedback",      CmdGun4irIGF);
     }
 
     if (categoryData == CatAll || categoryData == CatOpenFire)
     {
-        addCmd("OpenFIRE - Open COM Port",      CmdOpenFireCPO);
-        addCmd("OpenFIRE - Close COM Port",     CmdOpenFireCPC);
-        addCmd("OpenFIRE - Start Serial Mode",  CmdOpenFireSSM);
-        addCmd("OpenFIRE - Exit Serial Mode",   CmdOpenFireESM);
-        addCmd("OpenFIRE - Input Mode",         CmdOpenFireIM);
-        addCmd("OpenFIRE - Offscreen Reload",   CmdOpenFireOR);
-        addCmd("OpenFIRE - Pedal Mode",         CmdOpenFirePM);
-        addCmd("OpenFIRE - Aspect Ratio",       CmdOpenFireAR);
-        addCmd("OpenFIRE - Rumble Only",        CmdOpenFireRO);
-        addCmd("OpenFIRE - Full Auto",          CmdOpenFireFA);
-        addCmd("OpenFIRE - Display Mode",       CmdOpenFireDM);
-        addCmd("OpenFIRE - Pulse Override",     CmdOpenFirePO);
-        addCmd("OpenFIRE - In-Game Feedback",   CmdOpenFireIGF);
+        addCmd("OpenFIRE - Open COM Port",       CmdOpenFireCPO);
+        addCmd("OpenFIRE - Close COM Port",      CmdOpenFireCPC);
+        addCmd("OpenFIRE - Start Serial Mode",   CmdOpenFireSSM);
+        addCmd("OpenFIRE - Exit Serial Mode",    CmdOpenFireESM);
+        addCmd("OpenFIRE - Input Mode",          CmdOpenFireIM);
+        addCmd("OpenFIRE - Offscreen Reload",    CmdOpenFireOR);
+        addCmd("OpenFIRE - Pedal Mode",          CmdOpenFirePM);
+        addCmd("OpenFIRE - Aspect Ratio",        CmdOpenFireAR);
+        addCmd("OpenFIRE - Rumble Only",         CmdOpenFireRO);
+        addCmd("OpenFIRE - Full Auto",           CmdOpenFireFA);
+        addCmd("OpenFIRE - Display Mode",        CmdOpenFireDM);
+        addCmd("OpenFIRE - Pulse Override",      CmdOpenFirePO);
+        addCmd("OpenFIRE - In-Game Feedback",    CmdOpenFireIGF);
     }
 
     if (categoryData == CatAll || categoryData == CatRsMX24)
     {
-        addCmd("RS MX24 - Open COM Port",       CmdRsMX24CPO);
-        addCmd("RS MX24 - Close COM Port",      CmdRsMX24CPC);
-        addCmd("RS MX24 - Start Serial Mode",   CmdRsMX24SSM);
-        addCmd("RS MX24 - Exit Serial Mode",    CmdRsMX24ESM);
-        addCmd("RS MX24 - Self Control Mode",   CmdRsMX24SCM);
-        addCmd("RS MX24 - In-Game Feedback",    CmdRsMX24IGF);
+        addCmd("MX24 - Open COM Port",           CmdRsMX24CPO);
+        addCmd("MX24 - Close COM Port",          CmdRsMX24CPC);
+        addCmd("MX24 - Start Serial Mode",       CmdRsMX24SSM);
+        addCmd("MX24 - Exit Serial Mode",        CmdRsMX24ESM);
+        addCmd("MX24 - Self Control Mode",       CmdRsMX24SCM);
+        addCmd("MX24 - In-Game Feedback",        CmdRsMX24IGF);
     }
 
     if (categoryData == CatAll || categoryData == CatRsReaper)
     {
-        addCmd("RS Reaper - Open COM Port",     CmdRsReaperCPO);
-        addCmd("RS Reaper - Close COM Port",    CmdRsReaperCPC);
-        addCmd("RS Reaper - Start Serial Mode", CmdRsReaperSSM);
-        addCmd("RS Reaper - Exit Serial Mode",  CmdRsReaperESM);
-        addCmd("RS Reaper - Input Mode",        CmdRsReaperIM);
-        addCmd("RS Reaper - Offscreen Reload",  CmdRsReaperOR);
-        addCmd("RS Reaper - Aspect Ratio",      CmdRsReaperAR);
-        addCmd("RS Reaper - LED Auto Control",  CmdRsReaperLA);
-        addCmd("RS Reaper - In-Game Feedback",  CmdRsReaperIGF);
+        addCmd("RS3 Reaper - Open COM Port",     CmdRsReaperCPO);
+        addCmd("RS3 Reaper - Close COM Port",    CmdRsReaperCPC);
+        addCmd("RS3 Reaper - Start Serial Mode", CmdRsReaperSSM);
+        addCmd("RS3 Reaper - Exit Serial Mode",  CmdRsReaperESM);
+        addCmd("RS3 Reaper - Input Mode",        CmdRsReaperIM);
+        addCmd("RS3 Reaper - Offscreen Reload",  CmdRsReaperOR);
+        addCmd("RS3 Reaper - Aspect Ratio",      CmdRsReaperAR);
+        addCmd("RS3 Reaper - LED Auto Control",  CmdRsReaperLA);
+        addCmd("RS3 Reaper - In-Game Feedback",  CmdRsReaperIGF);
     }
 
     if (categoryData == CatAll || categoryData == CatSinden)
     {
-        addCmd("Sinden - Connect",              CmdSindenTSC);
-        addCmd("Sinden - Disconnect",           CmdSindenTSD);
-        addCmd("Sinden - In-Game Feedback",     CmdSindenIGF);
-        addCmd("Sinden - Set Recoil Mode",      CmdSindenRM);
-        addCmd("Sinden - Set Automatic Preset", CmdSindenAP);
-        addCmd("Sinden - Set Settings",         CmdSindenSS);
+        addCmd("Sinden - Connect",               CmdSindenTSC);
+        addCmd("Sinden - Disconnect",            CmdSindenTSD);
+        addCmd("Sinden - In-Game Feedback",      CmdSindenIGF);
+        addCmd("Sinden - Set Recoil Mode",       CmdSindenRM);
+        addCmd("Sinden - Set Automatic Preset",  CmdSindenAP);
+        addCmd("Sinden - Set Settings",          CmdSindenSS);
     }
 
     if (categoryData == CatAll || categoryData == CatXgunner)
     {
-        addCmd("X-Gunner - Open COM Port",      CmdXgunnerCPO);
-        addCmd("X-Gunner - Close COM Port",     CmdXgunnerCPC);
-        addCmd("X-Gunner - Start Serial Mode",  CmdXgunnerSSM);
-        addCmd("X-Gunner - Exit Serial Mode",   CmdXgunnerESM);
-        addCmd("X-Gunner - Input Mode",         CmdXgunnerIM);
-        addCmd("X-Gunner - Aspect Ratio",       CmdXgunnerAR);
-        addCmd("X-Gunner - In-Game Feedback",   CmdXgunnerIGF);
+        addCmd("X-Gunner - Open COM Port",       CmdXgunnerCPO);
+        addCmd("X-Gunner - Close COM Port",      CmdXgunnerCPC);
+        addCmd("X-Gunner - Start Serial Mode",   CmdXgunnerSSM);
+        addCmd("X-Gunner - Exit Serial Mode",    CmdXgunnerESM);
+        addCmd("X-Gunner - Input Mode",          CmdXgunnerIM);
+        addCmd("X-Gunner - Aspect Ratio",        CmdXgunnerAR);
+        addCmd("X-Gunner - In-Game Feedback",    CmdXgunnerIGF);
+    }
+
+    if (categoryData == CatAll || categoryData == CatAlien)
+    {
+        addCmd("Alien Gun - Enable LEDs",        CmdAlienLED);
+        addCmd("Alien Gun - Recoil State",       CmdAlienRecoil);
+        addCmd("Alien Gun - Digit Counter",      CmdAlienCounter);
     }
 
     if (categoryData == CatAll || categoryData == CatLedWiz)
     {
-        addCmd("LEDWiz - Set Pin State",        CmdLedWizState);
-        addCmd("LEDWiz - Set Power Level",      CmdLedWizPower);
-        addCmd("LEDWiz - Set RGB LED Color",    CmdLedWizColor);
-        addCmd("LEDWiz - Set Pulse Rate",       CmdLedWizPulse);
-        addCmd("LEDWiz - Kill All LEDs",        CmdLedWizKill);
+        addCmd("LEDWiz - Set Pin State",         CmdLedWizState);
+        addCmd("LEDWiz - Set Power Level",       CmdLedWizPower);
+        addCmd("LEDWiz - Set RGB LED Color",     CmdLedWizColor);
+        addCmd("LEDWiz - Set Pulse Rate",        CmdLedWizPulse);
+        addCmd("LEDWiz - Kill All LEDs",         CmdLedWizKill);
     }
 
     if (categoryData == CatAll || categoryData == CatUltimarc)
     {
-        addCmd("Ultimarc - Set LED State",      CmdUltimarcState);
-        addCmd("Ultimarc - Set LED Intensity",  CmdUltimarcIntensity);
-        addCmd("Ultimarc - Set LED Fade Time",  CmdUltimarcFadeTime);
-        addCmd("Ultimarc - Set RGB LED Color",  CmdUltimarcColor);
-        addCmd("Ultimarc - Kill All LEDs",      CmdUltimarcKill);
+        addCmd("Ultimarc - Set LED State",       CmdUltimarcState);
+        addCmd("Ultimarc - Set LED Intensity",   CmdUltimarcIntensity);
+        addCmd("Ultimarc - Set LED Fade Time",   CmdUltimarcFadeTime);
+        addCmd("Ultimarc - Set RGB LED Color",   CmdUltimarcColor);
+        addCmd("Ultimarc - Kill All LEDs",       CmdUltimarcKill);
+    }
+
+    if (categoryData == CatAll || categoryData == CatSDL3FFB)
+    {
+        addCmd("Force Feedback",                 CmdSDL3FFB);
+        addCmd("Force Feedback Advanced",        CmdSDL3FFA);
+    }
+
+    if (categoryData == CatAll || categoryData == CatUsbHid)
+    {
+        addCmd("Generic HID - Send Data",        CmdUsbHidSend);
     }
 
     if (categoryData == CatAll || categoryData == CatNetwork)
     {
-        addCmd("TCP - Connect",                 CmdTcpConnect);
-        addCmd("TCP - Disconnect",              CmdTcpDisconnect);
-        addCmd("TCP - Send Command",            CmdTcpSend);
-        addCmd("UDP - Send Command",            CmdUdpSend);
+        addCmd("TCP - Connect",                  CmdTcpConnect);
+        addCmd("TCP - Disconnect",               CmdTcpDisconnect);
+        addCmd("TCP - Send Command",             CmdTcpSend);
+        addCmd("UDP - Send Command",             CmdUdpSend);
     }
 
     if (categoryData == CatAll || categoryData == CatApplication)
     {
-        addCmd("Launch Application",            CmdAppLaunch);
-        addCmd("Close Application",             CmdAppClose);
+        addCmd("Launch Application",             CmdAppLaunch);
+        addCmd("Close Application",              CmdAppClose);
     }
 
     if (categoryData == CatAll || categoryData == CatAudio)
     {
-        addCmd("Play WAV Audio File",           CmdPlayWav);
+        addCmd("Play WAV Audio File",            CmdPlayWav);
     }
 
     if (categoryData == CatAll || categoryData == CatMisc)
     {
-        addCmd("Null Command",                  CmdNull);
+        addCmd("Null Command",                   CmdNull);
     }
 
     ui->cbFunction->blockSignals(false);
@@ -864,6 +943,12 @@ void EditorAddCmdWindow::handleFunctionChanged(int index)
         setupXgunnerUI(cmd);
         break;
 
+    case CmdAlienLED:
+    case CmdAlienRecoil:
+    case CmdAlienCounter:
+        setupAlienUI(cmd);
+        break;
+
     case CmdLedWizState:
     case CmdLedWizPower:
     case CmdLedWizColor:
@@ -878,6 +963,15 @@ void EditorAddCmdWindow::handleFunctionChanged(int index)
     case CmdUltimarcColor:
     case CmdUltimarcKill:
         setupUltimarcUI(cmd);
+        break;
+
+    case CmdSDL3FFB:
+    case CmdSDL3FFA:
+        setupSDL3UI(cmd);
+        break;
+
+    case CmdUsbHidSend:
+        setupUsbHidUI(cmd);
         break;
 
     case CmdTcpConnect:
@@ -1753,6 +1847,73 @@ void EditorAddCmdWindow::setupXgunnerUI(CommandType cmd)
     }
 }
 
+// Setup UI - Alien Positional Gun functions
+void EditorAddCmdWindow::setupAlienUI(CommandType cmd)
+{
+    setParamLabelVisibility(true, false, false, false, false);
+    setParamComboBoxVisibility(true, false, false, false, false);
+    setParamLineEditVisibility(false, false, false, false, false);
+    ui->labelParameter1->setFixedWidth(45);
+    ui->labelParameter1->setText("Device:");
+    ui->cbParameter1->setFixedWidth(45);
+    for (int i = 1; i <= MAXPLAYERS; ++i)
+        ui->cbParameter1->addItem(QString::number(i));
+    ui->lineEditParameter2->setText("&H04B4");
+    ui->lineEditParameter3->setText("&H6870");
+
+    if (cmd == CmdAlienLED)
+    {
+        ui->lineEditParameter4->setText("8");
+        ui->lineEditParameter5->setText("&h04:&h00:&h00:&h00:&h00:&h00:&h00:&h00");
+    }
+    else if (cmd == CmdAlienRecoil)
+    {
+        setParamLabelVisibility(true, false, false, false, true);
+        setParamComboBoxVisibility(true, false, false, false, true);
+        ui->lineEditParameter4->setText("2");
+        ui->labelParameter5->setFixedWidth(60);
+        ui->labelParameter5->setText("State:");
+        ui->cbParameter5->setFixedWidth(60);
+        ui->cbParameter5->addItem("State", "&h02:&h0%s%");
+        ui->cbParameter5->addItem("Off", "&h02:&h00");
+        ui->cbParameter5->addItem("On", "&h02:&h01");
+    }
+    else if (cmd == CmdAlienCounter)
+    {
+        setParamLabelVisibility(true, false, false, true, true);
+        setParamComboBoxVisibility(true, false, false, true, true);
+        ui->lineEditParameter4->setText("3");
+        ui->labelParameter4->setFixedWidth(60);
+        ui->labelParameter4->setText("Digit 1:");
+        ui->cbParameter4->setFixedWidth(60);
+        ui->cbParameter4->addItem("State", "&h03:&h0%s%:");
+        ui->cbParameter4->addItem("0", "&h03:&h00:");
+        ui->cbParameter4->addItem("1", "&h03:&h01:");
+        ui->cbParameter4->addItem("2", "&h03:&h02:");
+        ui->cbParameter4->addItem("3", "&h03:&h03:");
+        ui->cbParameter4->addItem("4", "&h03:&h04:");
+        ui->cbParameter4->addItem("5", "&h03:&h05:");
+        ui->cbParameter4->addItem("6", "&h03:&h06:");
+        ui->cbParameter4->addItem("7", "&h03:&h07:");
+        ui->cbParameter4->addItem("8", "&h03:&h08:");
+        ui->cbParameter4->addItem("9", "&h03:&h09:");
+        ui->labelParameter5->setFixedWidth(60);
+        ui->labelParameter5->setText("Digit 2:");
+        ui->cbParameter5->setFixedWidth(60);
+        ui->cbParameter5->addItem("State", "&h0%s%");
+        ui->cbParameter5->addItem("0", "&h00");
+        ui->cbParameter5->addItem("1", "&h01");
+        ui->cbParameter5->addItem("2", "&h02");
+        ui->cbParameter5->addItem("3", "&h03");
+        ui->cbParameter5->addItem("4", "&h04");
+        ui->cbParameter5->addItem("5", "&h05");
+        ui->cbParameter5->addItem("6", "&h06");
+        ui->cbParameter5->addItem("7", "&h07");
+        ui->cbParameter5->addItem("8", "&h08");
+        ui->cbParameter5->addItem("9", "&h09");
+    }
+}
+
 // Setup UI - LedWiz functions
 void EditorAddCmdWindow::setupLedWizUI(CommandType cmd)
 {
@@ -1911,6 +2072,78 @@ void EditorAddCmdWindow::setupUltimarcUI(CommandType cmd)
     }
 }
 
+// Setup UI - SDL3 Gamecontroller Force Feedback functions
+void EditorAddCmdWindow::setupSDL3UI(CommandType cmd)
+{
+    setParamLabelVisibility(true, true, false, false, false);
+    setParamComboBoxVisibility(true, true, false, false, false);
+    setParamLineEditVisibility(false, false, false, false, false);
+    ui->labelParameter1->setFixedWidth(45);
+    ui->labelParameter1->setText("Device:");
+    ui->cbParameter1->setFixedWidth(45);
+    for (int i = 1; i <= 16; ++i)
+        ui->cbParameter1->addItem(QString::number(i));
+    ui->labelParameter2->setFixedWidth(55);
+    ui->labelParameter2->setText("State:");
+    ui->cbParameter2->setFixedWidth(55);
+    ui->cbParameter2->addItem("State", SIGNALDATAVARIABLE);
+    ui->cbParameter2->addItem("Off", "0");
+    ui->cbParameter2->addItem("On", "1");
+
+    if (cmd == CmdSDL3FFA)
+    {
+        setParamLabelVisibility(true, true, true, true, true);
+        setParamLineEditVisibility(false, false, true, true, true);
+        ui->labelParameter3->setFixedWidth(90);
+        ui->labelParameter3->setText("Left Strength:");
+        ui->lineEditParameter3->setFixedWidth(90);
+        ui->lineEditParameter3->setValidator(validator65535);
+        ui->lineEditParameter3->setToolTip("0 - 65535");
+        ui->lineEditParameter3->setText("65535");
+        ui->labelParameter4->setFixedWidth(90);
+        ui->labelParameter4->setText("Right Strength:");
+        ui->lineEditParameter4->setFixedWidth(90);
+        ui->lineEditParameter4->setValidator(validator65535);
+        ui->lineEditParameter4->setToolTip("0 - 65535");
+        ui->lineEditParameter4->setText("65535");
+        ui->labelParameter5->setFixedWidth(60);
+        ui->labelParameter5->setText("Duration:");
+        ui->lineEditParameter5->setFixedWidth(60);
+        ui->lineEditParameter5->setInputMask("99999");
+        ui->lineEditParameter5->setToolTip("Milliseconds");
+        ui->lineEditParameter5->setText("10000");
+    }
+}
+
+// Setup UI - Generic HID functions
+void EditorAddCmdWindow::setupUsbHidUI(CommandType cmd)
+{
+    setParamLabelVisibility(true, true, true, true, true);
+    setParamComboBoxVisibility(true, false, false, false, false);
+    setParamLineEditVisibility(false, true, true, true, true);
+    ui->labelParameter1->setFixedWidth(45);
+    ui->labelParameter1->setText("Device:");
+    ui->cbParameter1->setFixedWidth(45);
+    for (int i = 1; i <= MAXPLAYERS; ++i)
+        ui->cbParameter1->addItem(QString::number(i));
+    ui->labelParameter2->setFixedWidth(65);
+    ui->labelParameter2->setText("Vendor ID:");
+    ui->lineEditParameter2->setFixedWidth(65);
+    ui->lineEditParameter2->setText("&H04B4");
+    ui->labelParameter3->setFixedWidth(65);
+    ui->labelParameter3->setText("Product ID:");
+    ui->lineEditParameter3->setFixedWidth(65);
+    ui->lineEditParameter3->setText("&H6870");
+    ui->labelParameter4->setFixedWidth(70);
+    ui->labelParameter4->setText("Report Len:");
+    ui->lineEditParameter4->setFixedWidth(70);
+    ui->lineEditParameter4->setText("2");
+    ui->labelParameter5->setFixedWidth(80);
+    ui->labelParameter5->setText("Bytes:");
+    ui->lineEditParameter5->setFixedWidth(80);
+    ui->lineEditParameter5->setText("&h02:&h01");
+}
+
 // Setup UI - TCP functions
 void EditorAddCmdWindow::setupTcpUI(CommandType cmd)
 {
@@ -2062,6 +2295,11 @@ bool EditorAddCmdWindow::checkCommand(const FunctionCommand &cmd)
     if (cmd.commandCode == PACSETFADETIME)
     {
         return validateLedFadeTimeValue(cmd);
+    }
+
+    if (cmd.commandCode == SDL3FFA)
+    {
+        return validateRumbleValues(cmd);
     }
 
     if (cmd.commandCode == TCPSOCKETCONNECT || cmd.commandCode == UDPSOCKETSEND)
@@ -2310,6 +2548,58 @@ bool EditorAddCmdWindow::validateLedFadeTimeValue(const FunctionCommand &cmd)
         ui->lineEditParameter2->setStyleSheet(errorStyle);
         QString errorMsg = "The fade time value is not in range [0-255]!\nIntensity value: " + cmd.param2;
         GuiUtilities::showMessageBoxCentered(this, "Ultimarc - Set LED Intensity - Error", errorMsg, QMessageBox::Critical);
+        return false;
+    }
+
+    return true;
+}
+
+// Validate rumble values
+bool EditorAddCmdWindow::validateRumbleValues(const FunctionCommand &cmd)
+{
+    const QString errorStyle = "border: 1px solid red;";
+
+    if (cmd.param3.isEmpty())
+    {
+        ui->lineEditParameter3->setStyleSheet(errorStyle);
+        QString errorMsg = "The left strength value field is empty!";
+        GuiUtilities::showMessageBoxCentered(this, "Gamecontroller - Force Feedback - Error", errorMsg, QMessageBox::Critical);
+        return false;
+    }
+
+    if (cmd.param4.isEmpty())
+    {
+        ui->lineEditParameter4->setStyleSheet(errorStyle);
+        QString errorMsg = "The right strength value field is empty!";
+        GuiUtilities::showMessageBoxCentered(this, "Gamecontroller - Force Feedback - Error", errorMsg, QMessageBox::Critical);
+        return false;
+    }
+
+    if (cmd.param5.isEmpty())
+    {
+        ui->lineEditParameter5->setStyleSheet(errorStyle);
+        QString errorMsg = "The duration value field is empty!";
+        GuiUtilities::showMessageBoxCentered(this, "Gamecontroller - Force Feedback - Error", errorMsg, QMessageBox::Critical);
+        return false;
+    }
+
+    QString text1 = ui->lineEditParameter3->text();
+    QString text2 = ui->lineEditParameter4->text();
+    int pos = 0;
+
+    if (ui->lineEditParameter3->validator()->validate(text1, pos) != QValidator::Acceptable)
+    {
+        ui->lineEditParameter3->setStyleSheet(errorStyle);
+        QString errorMsg = "The left strength value is not in range [0-65535]!\nStrength value: " + cmd.param3;
+        GuiUtilities::showMessageBoxCentered(this, "Gamecontroller - Force Feedback - Error", errorMsg, QMessageBox::Critical);
+        return false;
+    }
+
+    if (ui->lineEditParameter4->validator()->validate(text2, pos) != QValidator::Acceptable)
+    {
+        ui->lineEditParameter4->setStyleSheet(errorStyle);
+        QString errorMsg = "The right strength value is not in range [0-65535]!\nStrength value: " + cmd.param4;
+        GuiUtilities::showMessageBoxCentered(this, "Gamecontroller - Force Feedback - Error", errorMsg, QMessageBox::Critical);
         return false;
     }
 

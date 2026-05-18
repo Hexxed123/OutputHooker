@@ -1,3 +1,9 @@
+/*
+ * Original Copyright (c) 2026 PolybiusExtreme
+ *
+ * Licensed under the GNU GPLv3.
+ */
+
 #include "LedWizModule.h"
 
 //LedWiz SDK
@@ -12,31 +18,19 @@ LedWizModule::LedWizModule(QObject *parent)
     {
         f_LWZ_SBA = (Ptr_LWZ_SBA)m_ledWizLib.resolve("LWZ_SBA");
         f_LWZ_PBA = (Ptr_LWZ_PBA)m_ledWizLib.resolve("LWZ_PBA");
-        auto f_LWZ_SET_NOTIFY = (Ptr_LWZ_SET_NOTIFY)m_ledWizLib.resolve("LWZ_SET_NOTIFY");
+        f_LWZ_REGISTER = (Ptr_LWZ_REGISTER)m_ledWizLib.resolve("LWZ_REGISTER");
+        f_LWZ_SET_NOTIFY_EX = (Ptr_LWZ_SET_NOTIFY_EX)m_ledWizLib.resolve("LWZ_SET_NOTIFY_EX");
+        f_LWZ_GET_DEVICE_INFO = (Ptr_LWZ_GET_DEVICE_INFO)m_ledWizLib.resolve("LWZ_GET_DEVICE_INFO");
 
-        if (f_LWZ_SBA && f_LWZ_PBA && f_LWZ_SET_NOTIFY)
+        if (!f_LWZ_SBA || !f_LWZ_PBA || !f_LWZ_REGISTER || !f_LWZ_SET_NOTIFY_EX || !f_LWZ_GET_DEVICE_INFO)
         {
-            // Initialize devices
-            m_deviceList.numdevices = 0;
-            f_LWZ_SET_NOTIFY(nullptr, &m_deviceList);
-            numberLedWizDevices = m_deviceList.numdevices;
-
-            for (int i = 0; i < numberLedWizDevices; ++i)
-            {
-                resetCacheToDefaults(static_cast<quint8>(i));
-                updateSBA(i);
-                updatePBA(i);
-            }
-        }
-        else
-        {
-            QString errorMsg = "Could not resolve functions in LEDWiz64.dll!";
+            QString errorMsg = "Could not resolve all functions in LEDWiz64.dll!";
             emit showErrorMessage("LEDWiz64.dll - Error", errorMsg);
         }
     }
     else
     {
-        QString errorMsg = "LEDWiz64.dll not found. LEDWiz support disabled!";
+        QString errorMsg = "LEDWiz64.dll not found!";
         emit showErrorMessage("LEDWiz64.dll - Error ", errorMsg);
     }
 }
@@ -46,8 +40,66 @@ LedWizModule::~LedWizModule()
     // Turn the lights on all boards off
     turnLightsOnAllBoardsOff();
 
+    // Unregister devices
+    if (f_LWZ_REGISTER)
+    {
+        for (int i = 0; i < numberLedWizDevices; ++i)
+        {
+            f_LWZ_REGISTER(m_deviceList.handles[i], NULL);
+        }
+    }
+
     // Unload DLL
     m_ledWizLib.unload();
+}
+
+// Set the HWND of the LEDWiz DLL receiver
+void LedWizModule::setWinID(HWND handle)
+{
+    if (!f_LWZ_SET_NOTIFY_EX)
+        return;
+
+    m_attachedHwnd = handle;
+    m_deviceList.numdevices = 0;
+
+    // Register callback
+    f_LWZ_SET_NOTIFY_EX(&LedWizModule::deviceNotificationCallback, this, &m_deviceList);
+
+    // Register and initialize existing devices
+    numberLedWizDevices = m_deviceList.numdevices;
+    for (int i = 0; i < numberLedWizDevices; ++i)
+    {
+        f_LWZ_REGISTER(m_deviceList.handles[i], m_attachedHwnd);
+
+        resetCacheToDefaults(i);
+        updateSBA(i);
+        updatePBA(i);
+    }
+
+    collectLedWizData();
+}
+
+// Collect LEDWiz data
+void LedWizModule::collectLedWizData()
+{
+    QList<LedWizData> deviceList;
+
+    for (int i = 0; i < numberLedWizDevices; ++i)
+    {
+        LWZHANDLE h = m_deviceList.handles[i];
+        LWZDEVICEINFO info;
+        info.cbSize = sizeof(LWZDEVICEINFO);
+
+        if (f_LWZ_GET_DEVICE_INFO && f_LWZ_GET_DEVICE_INFO(h, &info))
+        {
+            LedWizData data;
+            data.id = i + 1;
+            data.type = info.dwDevType;
+            data.name = QString::fromLocal8Bit(info.szName);
+            deviceList.append(data);
+        }
+    }
+    emit ledWizDeviceList(deviceList);
 }
 
 // Set pin state
@@ -134,6 +186,60 @@ void LedWizModule::turnAllLightsOff(quint8 id)
         QString errorMsg = "ID " + QString::number(id + 1) + " is not in the valid LEDWiz controller list!";
         emit showErrorMessage("Invalid LEDWiz Controller ID!", errorMsg);
     }
+}
+
+// Refresh devices
+void LedWizModule::refreshDevices()
+{
+    if (f_LWZ_SET_NOTIFY_EX)
+    {
+        f_LWZ_SET_NOTIFY_EX(&LedWizModule::deviceNotificationCallback, this, &m_deviceList);
+    }
+}
+
+// Device notification callback
+void LWZCALLBACK LedWizModule::deviceNotificationCallback(void *puser, int32_t reason, LWZHANDLE hlwz)
+{
+    auto *instance = static_cast<LedWizModule*>(puser);
+
+    if (instance)
+    {
+        instance->handleDeviceChange(reason, hlwz);
+    }
+}
+
+// Handle device change
+void LedWizModule::handleDeviceChange(int32_t reason, LWZHANDLE hlwz)
+{
+    numberLedWizDevices = m_deviceList.numdevices;
+
+    if (reason == LWZ_REASON_ADD)
+    {
+        if (f_LWZ_REGISTER && m_attachedHwnd)
+        {
+            f_LWZ_REGISTER(hlwz, m_attachedHwnd);
+        }
+
+        for (int i = 0; i < numberLedWizDevices; ++i)
+        {
+            if (m_deviceList.handles[i] == hlwz)
+            {
+                resetCacheToDefaults(i);
+                updateSBA(i);
+                updatePBA(i);
+                break;
+            }
+        }
+    }
+    else if (reason == LWZ_REASON_DELETE)
+    {
+        if (f_LWZ_REGISTER)
+        {
+            f_LWZ_REGISTER(hlwz, NULL);
+        }
+    }
+
+    collectLedWizData();
 }
 
 // Validate power level

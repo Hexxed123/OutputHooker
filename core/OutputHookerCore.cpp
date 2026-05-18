@@ -1,3 +1,10 @@
+/*
+ * Original Copyright (c) 2026 PolybiusExtreme
+ * Portions Copyright (c) 2026 6Bolt
+ *
+ * Licensed under the GNU GPLv3.
+ */
+
 #include "OutputHookerCore.h"
 
 #include "../Global.h"
@@ -29,6 +36,9 @@ OutputHookerCore::OutputHookerCore(OutputHookerConfig *ohConfig, QObject *parent
     iniFileLoadFail = false;
     isGameINI = false;
     isDefaultINI = false;
+
+    //If USB HID is initialized
+    isUSBHIDInit = false;
 
     // Bool to check if mkdir
     canMKDIR = true;
@@ -83,32 +93,32 @@ OutputHookerCore::OutputHookerCore(OutputHookerConfig *ohConfig, QObject *parent
     // Connect the signals & slots for Windows message system
     connect(this, &OutputHookerCore::startWinMsg, p_winMsg, &WinMsgModule::connectWinMsg);
     connect(this, &OutputHookerCore::stopWinMsg, p_winMsg, &WinMsgModule::disconnectWinMsg);
-    connect(p_winMsg,&WinMsgModule::dataRead, this, &OutputHookerCore::processData);
-    connect(p_winMsg,&WinMsgModule::winMsgConnectedSignal, this, &OutputHookerCore::winMsgConnected);
-    connect(p_winMsg,&WinMsgModule::winMsgDisconnectedSignal, this, &OutputHookerCore::winMsgDisconnected);
+    connect(p_winMsg, &WinMsgModule::dataRead, this, &OutputHookerCore::processData);
+    connect(p_winMsg, &WinMsgModule::winMsgConnectedSignal, this, &OutputHookerCore::winMsgConnected);
+    connect(p_winMsg, &WinMsgModule::winMsgDisconnectedSignal, this, &OutputHookerCore::winMsgDisconnected);
 
     // When game or an empty game has started
-    connect(p_winMsg,&WinMsgModule::gameHasStarted, this, &OutputHookerCore::gameStart);
-    connect(p_winMsg,&WinMsgModule::emptyGameHasStarted, this, &OutputHookerCore::emptyGameStart);
+    connect(p_winMsg, &WinMsgModule::gameHasStarted, this, &OutputHookerCore::gameStart);
+    connect(p_winMsg, &WinMsgModule::emptyGameHasStarted, this, &OutputHookerCore::emptyGameStart);
 
     // When game has stopped
-    connect(p_winMsg,&WinMsgModule::gameHasStopped, this, &OutputHookerCore::gameStopped);
+    connect(p_winMsg, &WinMsgModule::gameHasStopped, this, &OutputHookerCore::gameStopped);
 
     // TCP Socket connections
 
     // Connect the signals & slots for TCP Socket
     connect(this, &OutputHookerCore::startTCPSocket, p_tcpSocket, &TCPSocketModule::connectTCP);
     connect(this, &OutputHookerCore::stopTCPSocket, p_tcpSocket, &TCPSocketModule::disconnectTCP);
-    connect(p_tcpSocket,&TCPSocketModule::dataRead, this, &OutputHookerCore::processData);
-    connect(p_tcpSocket,&TCPSocketModule::tcpConnectedSignal, this, &OutputHookerCore::tcpConnected);
-    connect(p_tcpSocket,&TCPSocketModule::tcpDisconnectedSignal, this, &OutputHookerCore::tcpDisconnected);
+    connect(p_tcpSocket, &TCPSocketModule::dataRead, this, &OutputHookerCore::processData);
+    connect(p_tcpSocket, &TCPSocketModule::tcpConnectedSignal, this, &OutputHookerCore::tcpConnected);
+    connect(p_tcpSocket, &TCPSocketModule::tcpDisconnectedSignal, this, &OutputHookerCore::tcpDisconnected);
 
     // When game or an empty game has started
-    connect(p_tcpSocket,&TCPSocketModule::gameHasStarted, this, &OutputHookerCore::gameStart);
-    connect(p_tcpSocket,&TCPSocketModule::emptyGameHasStarted, this, &OutputHookerCore::emptyGameStart);
+    connect(p_tcpSocket, &TCPSocketModule::gameHasStarted, this, &OutputHookerCore::gameStart);
+    connect(p_tcpSocket, &TCPSocketModule::emptyGameHasStarted, this, &OutputHookerCore::emptyGameStart);
 
     // When game has stopped
-    connect(p_tcpSocket,&TCPSocketModule::gameHasStopped, this, &OutputHookerCore::gameStopped);
+    connect(p_tcpSocket, &TCPSocketModule::gameHasStopped, this, &OutputHookerCore::gameStopped);
 
     if (useMultiThreading)
     {
@@ -145,6 +155,30 @@ OutputHookerCore::OutputHookerCore(OutputHookerConfig *ohConfig, QObject *parent
         threadForCOMPort.start(QThread::HighPriority);
     }
 
+    // Set up USB HID
+    p_usbHID = new HidapiModule();
+
+    if (useMultiThreading)
+    {
+        // Move USB HID to different thread
+        p_usbHID->moveToThread(&threadForUSBHID);
+        connect(&threadForUSBHID, &QThread::finished, p_usbHID, &QObject::deleteLater);
+    }
+
+    // USB HID connections
+
+    //Connect the signals & slots for USB HID
+    connect(this, &OutputHookerCore::startUSBHID, p_usbHID, &HidapiModule::connectHID);
+    connect(this, &OutputHookerCore::stopUSBHID, p_usbHID, &HidapiModule::disconnectHID);
+    connect(this, &OutputHookerCore::writeUSBHID, p_usbHID, &HidapiModule::writeDataHID);
+    connect(this, &OutputHookerCore::stopAllConnections, p_usbHID, &HidapiModule::disconnectAll);
+    connect(p_usbHID, &HidapiModule::showErrorMessage, this, &OutputHookerCore::errorMessage);
+
+    if (useMultiThreading)
+    {
+        threadForUSBHID.start(QThread::HighPriority);
+    }
+
     // Set up LedWiz
     p_ledWiz = new LedWizModule();
 
@@ -161,7 +195,9 @@ OutputHookerCore::OutputHookerCore(OutputHookerConfig *ohConfig, QObject *parent
     connect(this, &OutputHookerCore::setLwRGBColor, p_ledWiz, &LedWizModule::setRGBColor);
     connect(this, &OutputHookerCore::setLwPulseRate, p_ledWiz, &LedWizModule::setPulseRate);
     connect(this, &OutputHookerCore::turnAllLwLightsOff, p_ledWiz, &LedWizModule::turnAllLightsOff);
-    connect(p_ledWiz,&LedWizModule::showErrorMessage, this, &OutputHookerCore::errorMessage);
+    connect(this, &OutputHookerCore::refreshLwDevices, p_ledWiz, &LedWizModule::refreshDevices);
+    connect(p_ledWiz, &LedWizModule::ledWizDeviceList, this, &OutputHookerCore::ledWizDeviceList);
+    connect(p_ledWiz, &LedWizModule::showErrorMessage, this, &OutputHookerCore::errorMessage);
 
     if (useMultiThreading)
     {
@@ -174,9 +210,9 @@ OutputHookerCore::OutputHookerCore(OutputHookerConfig *ohConfig, QObject *parent
 
     if (useMultiThreading)
     {
-    // Move PacDriveModule to different thread
-    p_pacDrive->moveToThread(&threadForUltimarc);
-    connect(&threadForUltimarc, &QThread::finished, p_pacDrive, &QObject::deleteLater);
+        // Move PacDriveModule to different thread
+        p_pacDrive->moveToThread(&threadForUltimarc);
+        connect(&threadForUltimarc, &QThread::finished, p_pacDrive, &QObject::deleteLater);
     }
 
     // PacDrive connections
@@ -187,12 +223,36 @@ OutputHookerCore::OutputHookerCore(OutputHookerConfig *ohConfig, QObject *parent
     connect(this, &OutputHookerCore::setPdLightFadeTime, p_pacDrive, &PacDriveModule::setLightFadeTime);
     connect(this, &OutputHookerCore::setPdRGBColor, p_pacDrive, &PacDriveModule::setRGBColor);
     connect(this, &OutputHookerCore::turnAllPdLightsOff, p_pacDrive, &PacDriveModule::turnAllLightsOff);
-    connect(p_pacDrive,&PacDriveModule::showErrorMessage, this, &OutputHookerCore::errorMessage);
+    connect(p_pacDrive, &PacDriveModule::ultimarcDeviceList, this, &OutputHookerCore::ultimarcDeviceList);
+    connect(p_pacDrive, &PacDriveModule::showErrorMessage, this, &OutputHookerCore::errorMessage);
 
     if (useMultiThreading)
     {
         // Start PacDrive thread
         threadForUltimarc.start(QThread::HighPriority);
+    }
+
+    // Set up SDL3 controller commands
+    p_sdlCtrl = new SdlCtrlModule();
+
+    if (useMultiThreading)
+    {
+        // Move SdlCtrlModule to different thread
+        p_sdlCtrl->moveToThread(&threadForSdlCtrl);
+        connect(&threadForSdlCtrl, &QThread::finished, p_sdlCtrl, &QObject::deleteLater);
+    }
+
+    // SDL3 controller command connections
+
+    // Connect the signals & slots for SDL3 controller commands
+    connect(this, &OutputHookerCore::setRumble, p_sdlCtrl, &SdlCtrlModule::setRumble);
+    connect(p_sdlCtrl, &SdlCtrlModule::sdlDeviceList, this, &OutputHookerCore::sdlDeviceList);
+    connect(p_sdlCtrl, &SdlCtrlModule::showErrorMessage, this, &OutputHookerCore::errorMessage);
+
+    if (useMultiThreading)
+    {
+        // Start SDL3 controller command thread
+        threadForSdlCtrl.start(QThread::HighPriority);
     }
 
     // Set up network commands
@@ -212,7 +272,7 @@ OutputHookerCore::OutputHookerCore(OutputHookerConfig *ohConfig, QObject *parent
     connect(this, &OutputHookerCore::disconnectTcpHost, p_netCmd, &NetCmdModule::disconnectTcpHost);
     connect(this, &OutputHookerCore::sendTcpCommand, p_netCmd, &NetCmdModule::sendTcpCommand);
     connect(this, &OutputHookerCore::sendUdpCommand, p_netCmd, &NetCmdModule::sendUdpCommand);
-    connect(p_netCmd,&NetCmdModule::showErrorMessage, this, &OutputHookerCore::errorMessage);
+    connect(p_netCmd, &NetCmdModule::showErrorMessage, this, &OutputHookerCore::errorMessage);
 
     if (useMultiThreading)
     {
@@ -240,14 +300,18 @@ OutputHookerCore::~OutputHookerCore()
         threadForTCPSocket.quit();
         threadForWinMsg.quit();
         threadForCOMPort.quit();
+        threadForUSBHID.quit();
         threadForLedWiz.quit();
         threadForUltimarc.quit();
+        threadForSdlCtrl.quit();
         threadForNetCmd.quit();
         threadForTCPSocket.wait();
         threadForWinMsg.wait();
         threadForCOMPort.wait();
+        threadForUSBHID.wait();
         threadForLedWiz.wait();
         threadForUltimarc.wait();
+        threadForSdlCtrl.wait();
         threadForNetCmd.wait();
     }
     else
@@ -255,8 +319,10 @@ OutputHookerCore::~OutputHookerCore()
         delete p_tcpSocket;
         delete p_winMsg;
         delete p_comPort;
+        delete p_usbHID;
         delete p_ledWiz;
         delete p_pacDrive;
+        delete p_sdlCtrl;
         delete p_netCmd;
     }
 }
@@ -320,6 +386,7 @@ void OutputHookerCore::mainWindowState(bool isMin)
 void OutputHookerCore::setWinID(HWND handle)
 {
     p_winMsg->setWinID(handle);
+    p_ledWiz->setWinID(handle);
 }
 
 // Execute command line commands
@@ -387,6 +454,59 @@ void OutputHookerCore::executeTestCommand(const FunctionCommand &cmd)
         {
             quint8 comPortNumber = cmd.param1.toUInt();
             comPortWrite(comPortNumber, cmd.param2);
+        }
+    }
+    // USB HID write command, starts with "ghd"
+    else if (cmd.commandCode.startsWith(USBHIDCMD, Qt::CaseInsensitive))
+    {
+        bool isNumber;
+        quint8 deviceNumber = cmd.param1.toUInt(&isNumber);
+
+        // Vendor ID handling
+        QString vIDStr = cmd.param2;
+        vIDStr.remove(0, 2); // Remove &H or &h
+        quint16 vendorID = vIDStr.toUShort(&isNumber, 16);
+
+        // Product ID handling
+        QString pIDStr = cmd.param3;
+        pIDStr.remove(0, 2); // Remove &H or &h
+        quint16 productID = pIDStr.toUShort(&isNumber, 16);
+
+        // Process bytes
+        QStringList settings = cmd.param5.split(':', Qt::SkipEmptyParts);
+        QString dataBytes;
+
+        for (int j = 0; j < settings.count(); j++)
+        {
+            QString byteStr = settings[j];
+            byteStr.remove(0, 2); // Remove &h
+
+            if (byteStr.length() == 1)
+                byteStr.prepend('0');
+
+            dataBytes.append(byteStr);
+        }
+
+        // Generate HID key for QMap search
+        QString hidKey = QString::number(vendorID, 16);
+        hidKey.append(QString::number(productID, 16));
+        hidKey.append(QString::number(deviceNumber, 10));
+
+        if (hidPlayerMap.contains(hidKey))
+        {
+            quint8 player = hidPlayerMap[hidKey];
+            QByteArray cpBA = QByteArray::fromHex(dataBytes.toUtf8());
+            emit writeUSBHID(player, cpBA);
+        }
+        else
+        {
+            // If the device is not yet initialized, try to find it
+            if (FindUSBHIDDevice(vendorID, productID, deviceNumber))
+            {
+                quint8 player = hidPlayerMap[hidKey];
+                QByteArray cpBA = QByteArray::fromHex(dataBytes.toUtf8());
+                emit writeUSBHID(player, cpBA);
+            }
         }
     }
     // LedWiz commands, starts with "lw"
@@ -473,6 +593,30 @@ void OutputHookerCore::executeTestCommand(const FunctionCommand &cmd)
         {
             quint8 pacID = cmd.param1.toUInt() - 1;
             turnAllPacDriveLightsOff(pacID);
+        }
+    }
+    // SDL3 controller rumble commands, starts with "ff"
+    else if (cmd.commandCode.startsWith(FFBCMDSTART, Qt::CaseInsensitive) == true)
+    {
+        // Force Feedback command
+        if (cmd.commandCode.startsWith(SDL3FFB, Qt::CaseInsensitive))
+        {
+            quint8 sdlID = cmd.param1.toUInt();
+            bool sdlState = (cmd.param2.toUInt() > 0);
+            uint16_t sdlLeftStrenth = 65535;
+            uint16_t sdlRightStrenth = 65535;
+            uint32_t sdlDuration = 30000;
+            setCtrlRumble(sdlID, sdlState, sdlLeftStrenth, sdlRightStrenth, sdlDuration);
+        }
+        // Force Feedback Advanced command
+        else if (cmd.commandCode.startsWith(SDL3FFA, Qt::CaseInsensitive))
+        {
+            quint8 sdlID = cmd.param1.toUInt();
+            bool sdlState = (cmd.param2.toUInt() > 0);
+            uint16_t sdlLeftStrenth = cmd.param3.toUInt();
+            uint16_t sdlRightStrenth = cmd.param4.toUInt();
+            uint32_t sdlDuration = cmd.param5.toUInt();
+            setCtrlRumble(sdlID, sdlState, sdlLeftStrenth, sdlRightStrenth, sdlDuration);
         }
     }
     // TCP commands, starts with "ts"
@@ -881,6 +1025,10 @@ void OutputHookerCore::loadINIFile()
 
     iniFileLoadFail = false;
     openComPortCheck.clear();
+
+    // Close any old USB HID connections
+    closeUSBHID();
+    hidPlayerMap.clear();
 
     // Open file. If failed to open, show Critical Message Box
     QFile iniFile(gameINIFilePath);
@@ -1349,6 +1497,131 @@ bool OutputHookerCore::checkINICommand(QString commandNotChk, quint16 lineNumber
             return true;
         }
     }
+    // USB HID write command, starts with "ghd"
+    else if (commandNotChk.startsWith(USBHIDCMD, Qt::CaseInsensitive))
+    {
+        // This will give 6 Strings = 1: ghd  2: Device#  3: Vendor ID  4: Product ID  5: Number of Bytes  6: Bytes
+        cmd = commandNotChk.split(' ', Qt::SkipEmptyParts);
+
+        if (cmd.count() != 6)
+        {
+            QString errorMsg = "Command requires 5 parameters (Device, Vendor ID, Product ID, Number of Bytes, Bytes)!\nLine Number: " + QString::number(lineNumber)+"\nCommand: " + commandNotChk + "\nFile: " + filePathName;
+            emit showErrorMessage("USB HID Write - Error", errorMsg);
+            return false;
+        }
+
+        bool isNumber;
+        quint8 deviceNumber = cmd[1].toUInt(&isNumber);
+        quint16 vendorID;
+        quint16 productID;
+
+        if (!isNumber)
+        {
+            QString errorMsg = "Device number is not a number!\nLine Number: " + QString::number(lineNumber) + "\nDevice Number: " + cmd[1] + "\nFile: " + filePathName;
+            emit showErrorMessage("USB HID Write - Error", errorMsg);
+            return false;
+        }
+
+        if (cmd[2][0] == '&' && (cmd[2][1] == 'H' || cmd[2][1] == 'h'))
+        {
+            // Remove the '&H' or '&h' so that only the hex number is left
+            cmd[2].remove(0,2);
+            vendorID = cmd[2].toUShort(&isNumber, 16);
+
+            if (!isNumber)
+            {
+                QString errorMsg = "Vendor ID number is not a hex number!\nLine Number: " + QString::number(lineNumber) + "\nVendor ID Number: " + cmd[2] + "\nFile: " + filePathName;
+                emit showErrorMessage("USB HID Write - Error", errorMsg);
+                return false;
+            }
+        }
+        else
+        {
+            QString errorMsg = "Vendor ID doesn't have the needed &H in front of the number!\nLine Number: " + QString::number(lineNumber) + "\nVendor ID: " + cmd[2] + "\nFile: " + filePathName;
+            emit showErrorMessage("USB HID Write - Error", errorMsg);
+            return false;
+        }
+
+        if (cmd[3][0] == '&' && (cmd[3][1] == 'H' || cmd[3][1] == 'h'))
+        {
+            // Remove the '&H' or '&h' so that only the hex number is left
+            cmd[3].remove(0,2);
+            productID = cmd[3].toUShort(&isNumber, 16);
+
+            if (!isNumber)
+            {
+                QString errorMsg = "Product ID number is not a hex number!\nLine Number: " + QString::number(lineNumber) + "\nProduct ID Number: " + cmd[3] + "\nFile: " + filePathName;
+                emit showErrorMessage("USB HID Write - Error", errorMsg);
+                return false;
+            }
+        }
+        else
+        {
+            QString errorMsg = "Product ID doesn't have the needed &H in front of the number!\nLine Number: " + QString::number(lineNumber) + "\nProduct ID: " + cmd[3]  +"\nFile: " + filePathName;
+            emit showErrorMessage("USB HID Write - Error", errorMsg);
+            return false;
+        }
+
+        bool foundHID = FindUSBHIDDevice(vendorID, productID, deviceNumber);
+
+        if (!foundHID)
+        {
+            QString errorMsg = "Could not find the HID with the Vendor ID, Product ID and device number!\nLine Number: " + QString::number(lineNumber) + "\nProductID: " + cmd[3] + "\nFile: " + filePathName;
+            emit showErrorMessage("USB HID Write - Error", errorMsg);
+            return false;
+        }
+
+        quint8 byteNumber = cmd[4].toUInt(&isNumber);
+
+        if (!isNumber)
+        {
+            QString errorMsg = "Number of Bytes is not a number.\nLine Number: " + QString::number(lineNumber) + "\nNumber of Bytes: " + cmd[4] + "\nFile: " + filePathName;
+            emit showErrorMessage("USB HID Write - Error", errorMsg);
+            return false;
+        }
+
+        settings = cmd[5].split(':', Qt::SkipEmptyParts);
+
+        if (settings.count() != byteNumber)
+        {
+            QString errorMsg = "Number of Bytes doesn't equal number of data bytes!\nLine Number: " + QString::number(lineNumber) + "\nNumber of Bytes: " + cmd[4] + "\nData Bytes: " + cmd[5] + "\nFile: " + filePathName;
+            emit showErrorMessage("USB HID Write - Error", errorMsg);
+            return false;
+        }
+
+        for (quint8 i = 0; i < settings.count(); i++)
+        {
+            if (settings[i][0] == '&' && settings[i][1] == 'h')
+            {
+                // Remove the '&h' so that only the hex number is left
+                settings[i].remove(0,2);
+                quint16 byteData = settings[i].toUShort(&isNumber, 16);
+
+                if (!isNumber)
+                {
+                    QString errorMsg = "Data Byte is not a hex number!\nLine Number: " + QString::number(lineNumber) + "\nData Byte: " + settings[i] + "\nFile: " + filePathName;
+                    emit showErrorMessage("USB HID Write - Error", errorMsg);
+                    return false;
+                }
+
+                if (byteData > 255)
+                {
+                    QString errorMsg = "Data byte is out of range (00 - FF)!\nLine Number: " + QString::number(lineNumber) + "\nData Byte: " + settings[i] + "\nFile: " + filePathName;
+                    emit showErrorMessage("USB HID Write - Error", errorMsg);
+                    return false;
+                }
+            }
+            else
+            {
+                QString errorMsg = "Data Byte doesn't have the needed &h in front of the number!\nLine Number: " + QString::number(lineNumber) + "\nData Byte: " + settings[i] + "\nFile: " + filePathName;
+                emit showErrorMessage("USB HID Write - Error", errorMsg);
+                return false;
+            }
+        }
+
+        // Good command
+        return true;
+    }
     // LedWiz commands, starts with "lw"
     else if (commandNotChk.startsWith(LWCMDSTART, Qt::CaseInsensitive) == true)
     {
@@ -1751,6 +2024,87 @@ bool OutputHookerCore::checkINICommand(QString commandNotChk, quint16 lineNumber
             return true;
         }
     }
+    // SDL3 controller rumble commands, starts with "ff"
+    else if (commandNotChk.startsWith(FFBCMDSTART, Qt::CaseInsensitive) == true)
+    {
+        // Force Feedback command
+        if (commandNotChk.startsWith(SDL3FFB, Qt::CaseInsensitive))
+        {
+            // This will give 3 strings = 1: ffb  2: Device  3: State
+            cmd = commandNotChk.split(' ', Qt::SkipEmptyParts);
+
+            if (cmd.size() < 3)
+            {
+                QString errorMsg = "Command requires 2 parameters (Device, State)!\nLine Number: " + QString::number(lineNumber) + "\nFile: " + gameName + ENDOFINIFILE;;
+                emit showErrorMessage("Force Feedback - Error", errorMsg);
+                return false;
+            }
+
+            cmd[1].toUInt(&isNumber);
+
+            if (!isNumber)
+            {
+                QString errorMsg = "Device number is not a number!\nLine Number: " + QString::number(lineNumber) + "\nDevice: " + cmd[1] + "\nFile: " + gameName + ENDOFINIFILE;
+                emit showErrorMessage("Force Feedback - Error", errorMsg);
+                return false;
+            }
+
+            // Good command
+            return true;
+        }
+        // Force Feedback Advanced command
+        else if (commandNotChk.startsWith(SDL3FFA, Qt::CaseInsensitive))
+        {
+            // This will give 6 strings = 1: ffa  2: Device  3: State  4: Left Strength Value  5: Right Strength Value  6: Duration Value
+            cmd = commandNotChk.split(' ', Qt::SkipEmptyParts);
+
+            if (cmd.size() < 6)
+            {
+                QString errorMsg = "Command requires 5 parameters (Device, State, Left Strength Value, Right Strength Value, Duration Value)!\nLine Number: " + QString::number(lineNumber) + "\nFile: " + gameName + ENDOFINIFILE;;
+                emit showErrorMessage("Force Feedback Advanced - Error", errorMsg);
+                return false;
+            }
+
+            cmd[1].toUInt(&isNumber);
+
+            if (!isNumber)
+            {
+                QString errorMsg = "Device number is not a number!\nLine Number: " + QString::number(lineNumber) + "\nDevice: " + cmd[1] + "\nFile: " + gameName + ENDOFINIFILE;
+                emit showErrorMessage("Force Feedback Advanced - Error", errorMsg);
+                return false;
+            }
+
+            cmd[3].toUInt(&isNumber);
+
+            if (!isNumber)
+            {
+                QString errorMsg = "Left strength value is not a number!\nLine Number: " + QString::number(lineNumber) + "\nLeft Strength Value: " + cmd[2] + "\nFile: " + gameName + ENDOFINIFILE;
+                emit showErrorMessage("Force Feedback Advanced - Error", errorMsg);
+                return false;
+            }
+
+            cmd[4].toUInt(&isNumber);
+
+            if (!isNumber)
+            {
+                QString errorMsg = "Right strength value is not a number!\nLine Number: " + QString::number(lineNumber) + "\nRight Strength Value: " + cmd[2] + "\nFile: " + gameName + ENDOFINIFILE;
+                emit showErrorMessage("Force Feedback Advanced - Error", errorMsg);
+                return false;
+            }
+
+            cmd[5].toUInt(&isNumber);
+
+            if (!isNumber)
+            {
+                QString errorMsg = "Duration value is not a number!\nLine Number: " + QString::number(lineNumber) + "\nDuration Value: " + cmd[2] + "\nFile: " + gameName + ENDOFINIFILE;
+                emit showErrorMessage("Force Feedback Advanced - Error", errorMsg);
+                return false;
+            }
+
+            // Good command
+            return true;
+        }
+    }
     // TCP commands, starts with "ts"
     else if (commandNotChk.startsWith(TCPCMDSTART, Qt::CaseInsensitive) == true)
     {
@@ -1955,6 +2309,126 @@ bool OutputHookerCore::checkINICommand(QString commandNotChk, quint16 lineNumber
     return false;
 }
 
+// Find USB HID device
+bool OutputHookerCore::FindUSBHIDDevice(quint16 vendorID, quint16 productID, quint8 deviceNumber)
+{
+    HIDInfo foundHIDInfo;
+    QString path;
+    QStringList pathList;
+    quint8 numberOfDevices = 0;
+    QString hidKey;
+
+    //USB HID initialize
+    if (!isUSBHIDInit)
+    {
+        //Initialize the USB HID
+        if (hid_init())
+        {
+            QString errorMsg = "Failed to initialize USB HID!";
+            emit showErrorMessage("USB HID Initialisation - Error!", errorMsg);
+            return false;
+        }
+        else
+            isUSBHIDInit = true;
+    }
+
+    //Key used for the QMap
+    hidKey = QString::number(vendorID, 16);
+    hidKey.append (QString::number(productID, 16));
+    hidKey.append (QString::number(deviceNumber, 10));
+
+    //Check if it is in QMap already
+    if (hidPlayerMap.contains(hidKey))
+        return true;
+
+    hid_device_info *devs;
+
+    //Find USB HID devices with the same vendorID & productID
+    devs = hid_enumerate(vendorID, productID);
+
+    //Go through the USB HID devices
+    //Multiple devices can have the same vendorID, productID and serial number
+    for (; devs; devs = devs->next)
+    {
+        path = QString::fromLatin1(devs->path);
+
+        if (numberOfDevices == 0)
+        {
+            pathList << path;
+            numberOfDevices++;
+        }
+        else
+        {
+            if (!pathList.contains(path))
+            {
+                pathList << path;
+                numberOfDevices++;
+            }
+        }
+
+        if (numberOfDevices == deviceNumber)
+        {
+
+            foundHIDInfo.vendorID = devs->vendor_id;
+            QString tempVID = QString::number(devs->vendor_id, 16).rightJustified(4, '0');
+            tempVID = tempVID.toUpper();
+            tempVID.prepend("0x");
+            foundHIDInfo.vendorIDString = tempVID;
+
+            foundHIDInfo.productID = devs->product_id;
+            QString tempPID = QString::number(devs->product_id, 16).rightJustified(4, '0');
+            tempPID = tempPID.toUpper();
+            tempPID.prepend("0x");
+            foundHIDInfo.productIDString = tempPID;
+
+            foundHIDInfo.path = QString::fromLatin1(devs->path);
+            QString tempDP = foundHIDInfo.path;
+            tempDP.remove(0, FRONTPATHREM);
+            foundHIDInfo.displayPath = tempDP;
+
+            foundHIDInfo.serialNumber = QString::fromWCharArray(devs->serial_number);
+            foundHIDInfo.releaseNumber = devs->release_number;
+            QString tempR = QString::number(devs->release_number, 16).rightJustified(4, '0');
+            tempR = tempR.toUpper();
+            tempR.prepend("0x");
+            foundHIDInfo.releaseString = tempR;
+
+            foundHIDInfo.manufacturer = QString::fromWCharArray(devs->manufacturer_string);
+            foundHIDInfo.productDiscription = QString::fromWCharArray(devs->product_string);
+            foundHIDInfo.interfaceNumber = devs->interface_number;
+            foundHIDInfo.usagePage = devs->usage_page;
+            foundHIDInfo.usage = devs->usage;
+            foundHIDInfo.usageString = processHIDUsage(foundHIDInfo.usagePage, foundHIDInfo.usage);
+
+            quint8 playerNum = hidPlayerMap.count();
+
+            if(playerNum >= 4)
+            {
+                QString errorMsg = "Only 4 HIDs open at the same time are supported (Player 1-4)!\nVendorID: " + QString::number(vendorID, 16) + "\nProductID: " + QString::number(productID, 16) + "\nDevice Number: " + QString::number(deviceNumber);
+                emit showErrorMessage("USB HID - Error!", errorMsg);
+                return false;
+            }
+
+            hidPlayerMap.insert(hidKey, playerNum);
+
+            //Connect the USB HID
+            emit startUSBHID(playerNum, foundHIDInfo);
+
+            //Release HID enumeration
+            hid_free_enumeration(devs);
+
+            return true;
+        }
+    }
+
+    //Release HID enumeration
+    hid_free_enumeration(devs);
+
+    QString errorMsg = "Could not find the USB HID device!\nVendorID: " + QString::number(vendorID, 16) + "\nProductID: " + QString::number(productID, 16) + "\nDevice Number: " + QString::number(deviceNumber);
+    emit showErrorMessage("USB HID - Error!", errorMsg);
+    return false;
+}
+
 // Map key name to virtual key code
 int OutputHookerCore::mapKeyNameToCode(const QString &name)
 {
@@ -2123,7 +2597,7 @@ void OutputHookerCore::executeINICommands(const QStringList &commands, const QSt
         }
 
         // Replace placeholder %s%
-        if (currentCommand.contains(SIGNALDATAVARIABLE))
+        if (currentCommand.contains(SIGNALDATAVARIABLE) && !currentCommand.startsWith(USBHIDCMD))
         {
             currentCommand.replace(SIGNALDATAVARIABLE, value);
         }
@@ -2191,6 +2665,85 @@ void OutputHookerCore::executeINICommands(const QStringList &commands, const QSt
 
                 comPortWrite(comPortNumber, cmd[2]);
             }
+        }
+        // USB HID write command, starts with "ghd"
+        else if(currentCommand.startsWith(USBHIDCMD, Qt::CaseInsensitive))
+        {
+            // This will give 6 Strings = 1: ghd  2: Device#  3: Vendor ID  4: Product ID  5: Number of Bytes  6: Bytes
+            cmd = currentCommand.split(' ', Qt::SkipEmptyParts);
+
+            QString hidKey;
+            bool isNumber;
+            quint8 deviceNumber = cmd[1].toUInt(&isNumber);
+
+            // Remove the '&H' or '&h' so that only the hex number is left
+            cmd[2].remove(0,2);
+            quint16 vendorID = cmd[2].toUShort(&isNumber, 16);
+
+            // Remove the '&H' or '&h' so that only the hex number is left
+            cmd[3].remove(0,2);
+            quint16 productID = cmd[3].toUShort(&isNumber, 16);
+
+            quint8 valueMarkers = cmd[5].count(SIGNALDATAVARIABLE);
+            quint16 valueNum = value.toUShort();
+            QString upperDigit, lowerDigit;
+
+            if (valueMarkers > 1)
+            {
+                if (valueNum > 9)
+                {
+                    upperDigit = value[0];
+                    lowerDigit = value[1];
+                }
+                else
+                {
+                    upperDigit= '0';
+                    lowerDigit = value[0];
+                }
+            }
+            else if (valueMarkers == 1)
+                lowerDigit = value[0];
+
+            // Split up the Data Bytes
+            settings = cmd[5].split(':', Qt::SkipEmptyParts);
+
+            QString dataBytes;
+
+            for (quint8 j = 0; j < settings.count(); j++)
+            {
+                // Remove the '&h' so that only the hex number is left
+                settings[j].remove(0,2);
+
+                if (settings[j].contains(SIGNALDATAVARIABLE))
+                {
+                    if (valueMarkers > 1)
+                    {
+                        settings[j].replace(SIGNALDATAVARIABLE, upperDigit);
+                        valueMarkers--;
+                    }
+                    else if (valueMarkers == 1)
+                        settings[j].replace(SIGNALDATAVARIABLE, lowerDigit);
+                }
+
+                if (settings[j].length() == 1)
+                    settings[j].prepend('0');
+
+                dataBytes.append(settings[j]);
+            }
+
+            // Find the USB HID device
+            // Key used for the QMap
+            hidKey = QString::number(vendorID, 16);
+            hidKey.append (QString::number(productID, 16));
+            hidKey.append (QString::number(deviceNumber, 10));
+
+            quint8 player = hidPlayerMap[hidKey];
+
+            // Convert string to hex QByteArray
+            QByteArray cpBA = QByteArray::fromHex(dataBytes.toUtf8());
+
+            // Send data to USB HID
+            emit writeUSBHID(player, cpBA);
         }
         // LedWiz commands, starts with "lw"
         else if (currentCommand.startsWith(LWCMDSTART, Qt::CaseInsensitive) == true)
@@ -2338,6 +2891,42 @@ void OutputHookerCore::executeINICommands(const QStringList &commands, const QSt
                 }
             }
         }
+        // SDL3 controller rumble commands, starts with "ff"
+        else if (currentCommand.startsWith(FFBCMDSTART, Qt::CaseInsensitive) == true)
+        {
+            // Force Feedback command
+            if (currentCommand.startsWith(SDL3FFB, Qt::CaseInsensitive))
+            {
+                // This will give 3 strings = 1: ffb  2: Device  3: State
+                cmd = currentCommand.split(' ', Qt::SkipEmptyParts);
+
+                if (cmd.size() >= 3)
+                {
+                    quint8 sdlID = cmd[1].toUInt();
+                    bool sdlState = (cmd[2].toUInt() > 0);
+                    uint16_t sdlLeftStrenth = 65535;
+                    uint16_t sdlRightStrenth = 65535;
+                    uint32_t sdlDuration = 30000;
+                    setCtrlRumble(sdlID, sdlState, sdlLeftStrenth, sdlRightStrenth, sdlDuration);
+                }
+            }
+            // Force Feedback Advanced command
+            else if (currentCommand.startsWith(SDL3FFA, Qt::CaseInsensitive))
+            {
+                // This will give 6 strings = 1: ffa  2: Device  3: State  4: Left Strength  5: Right Strength  6: Duration
+                cmd = currentCommand.split(' ', Qt::SkipEmptyParts);
+
+                if (cmd.size() >= 6)
+                {
+                    quint8 sdlID = cmd[1].toUInt();
+                    bool sdlState = (cmd[2].toUInt() > 0);
+                    uint16_t sdlLeftStrenth = cmd[3].toUInt();
+                    uint16_t sdlRightStrenth = cmd[4].toUInt();
+                    uint32_t sdlDuration = cmd[5].toUInt();
+                    setCtrlRumble(sdlID, sdlState, sdlLeftStrenth, sdlRightStrenth, sdlDuration);
+                }
+            }
+        }
         // TCP commands, starts with "ts"
         else if (currentCommand.startsWith(TCPCMDSTART, Qt::CaseInsensitive) == true)
         {
@@ -2475,6 +3064,19 @@ void OutputHookerCore::comPortWrite(quint8 cpNum, QString cpData)
     emit writeComPort(cpNum, cpBA);
 }
 
+// Close all USB HID connections
+void OutputHookerCore::closeUSBHID()
+{
+    quint8 numberPlayers = hidPlayerMap.count();
+    quint8 i;
+
+    if (numberPlayers > 0)
+    {
+        for (i = 0; i < numberPlayers; i++)
+            emit stopUSBHID(i);
+    }
+}
+
 // Set LedWiz pin state
 void OutputHookerCore::setLedWizPinState(quint8 lwID, quint8 lwPin, bool lwState)
 {
@@ -2533,6 +3135,12 @@ void OutputHookerCore::setPacDriveRGBColor(quint8 pacID, quint8 pacPin, quint8 p
 void OutputHookerCore::turnAllPacDriveLightsOff(quint8 pacID)
 {
     emit turnAllPdLightsOff(pacID);
+}
+
+// Set SDL3 gamecontroller rumble
+void OutputHookerCore::setCtrlRumble(quint8 id, bool state, uint16_t leftStrength, uint16_t rightStrength, uint32_t duration)
+{
+    emit setRumble(id, state, leftStrength, rightStrength, duration);
 }
 
 // TCP connect
@@ -2696,4 +3304,104 @@ void OutputHookerCore::clearOnDisconnect()
     }
 
     emit noConnectedGame();
+}
+
+// Process usage & usagePage from USB HID data
+QString OutputHookerCore::processHIDUsage(quint16 usagePage, quint16 usage)
+{
+    if (usagePage == 1)
+    {
+        if (usage == 0)
+            return "Undefined";
+        else if (usage == 1)
+            return "Pointer";
+        else if (usage == 2)
+            return "Mouse";
+        else if (usage == 3)
+            return "Reserved";
+        else if (usage == 4)
+            return "Joystick";
+        else if (usage == 5)
+            return "GamePad";
+        else if (usage == 6)
+            return "Keyboard";
+        else if (usage == 7)
+            return "Keypad";
+        else if (usage == 8)
+            return "Multi-Axis Controller";
+        else if (usage == 9)
+            return "Tablet PC System Controls";
+        else if (usage == 0x0A)
+            return "Water Cooling Device";
+        else if (usage == 0x0B)
+            return "Computer Chassis Device";
+        else if (usage == 0x0C)
+            return "Wireless Radio Controls";
+        else if (usage == 0x0D)
+            return "Portable Device Control";
+        else if (usage == 0x0E)
+            return "System Multi-Axis Controller";
+        else if (usage == 0x0F)
+            return "Spatial Controller";
+        else if (usage == 0x10)
+            return "Assistive Control";
+        else if (usage == 0x11)
+            return "Device Dock";
+        else if (usage == 0x12)
+            return "Dockable Device";
+        else if (usage == 0x13)
+            return "Call State Management Control";
+        else if (usage == 0x3A)
+            return "Counted Buffer";
+        else if (usage == 0x80)
+            return "System Control";
+        else if (usage == 0x96)
+            return "Thumbstick";
+        else if (usage == 0xC5)
+            return "Chassis Enclosure";
+        else
+            return "";
+    }
+    else if (usagePage == 0x05)
+    {
+        if (usage == 0)
+            return "Undefined";
+        else if (usage == 1)
+            return "3D Game Controller";
+        else if (usage == 2)
+            return "Pinball Device";
+        else if (usage == 3)
+            return "Gun Device";
+        else if (usage == 20)
+            return "Point of View";
+        else if (usage == 32)
+            return "Gun Selector";
+        else
+            return "";
+    }
+    else if (usagePage == 0x0C)
+    {
+        if (usage == 1)
+            return "Consumer Control";
+        else if (usage == 2)
+            return "Numeric Key Pad";
+        else if (usage == 3)
+            return "Programmable Buttons";
+        else if (usage == 4)
+            return "Microphone";
+        else if (usage == 5)
+            return "Headphone";
+        else if (usage == 6)
+            return "Graphic Equalizer";
+        else if (usage == 0x36)
+            return "Function Buttons";
+        else if (usage == 0x80)
+            return "Selection";
+        else
+            return "";
+    }
+    else if (usagePage >= 0xFF00)
+        return "Vendor Defined";
+
+    return "";
 }

@@ -1,3 +1,10 @@
+/*
+ * Original Copyright (c) 2026 PolybiusExtreme
+ * Portions Copyright (c) 2026 6Bolt
+ *
+ * Licensed under the GNU GPLv3.
+ */
+
 #include "OutputHookerConfig.h"
 
 #include <QSettings>
@@ -34,6 +41,18 @@ void OutputHookerConfig::saveSettings()
     settings.setValue("UseDefaultINI", saveNewOutputsToDefaultINI);
     settings.setValue("MultiThreading", useMultiThreading);
     settings.endGroup();
+
+    settings.beginGroup("COM_Ports");
+    QMapIterator<QString, QString> i(comPortPlaceholders);
+    while (i.hasNext())
+    {
+        i.next();
+        QString cleanKey = i.key();
+        cleanKey.remove("%");
+        settings.setValue(cleanKey, i.value());
+    }
+    settings.endGroup();
+
     settings.beginGroup("Debug");
     settings.setValue("BypassSerialWriteChecks", bypassSerialWriteChecks);
     settings.endGroup();
@@ -55,7 +74,8 @@ void OutputHookerConfig::loadSettings()
     QStringList keys = settings.allKeys();
     foreach (const QString &key, keys)
     {
-        comPortPlaceholders.insert(key, settings.value(key).toString());
+        QString placeholder = QString("%%1%").arg(key);
+        comPortPlaceholders.insert(placeholder, settings.value(key).toString());
     }
     settings.endGroup();
 

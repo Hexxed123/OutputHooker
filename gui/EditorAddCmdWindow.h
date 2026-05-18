@@ -1,3 +1,9 @@
+/*
+ * Original Copyright (c) 2026 PolybiusExtreme
+ *
+ * Licensed under the GNU GPLv3.
+ */
+
 #ifndef EDITORADDCMDWINDOW_H
 #define EDITORADDCMDWINDOW_H
 
@@ -67,8 +73,11 @@ private:
     void setupRsReaperUI(CommandType cmd);
     void setupSindenUI(CommandType cmd);
     void setupXgunnerUI(CommandType cmd);
+    void setupAlienUI(CommandType cmd);
     void setupLedWizUI(CommandType cmd);
     void setupUltimarcUI(CommandType cmd);
+    void setupSDL3UI(CommandType cmd);
+    void setupUsbHidUI(CommandType cmd);
     void setupTcpUI(CommandType cmd);
     void setupUdpUI(CommandType cmd);
     void setupAppUI(CommandType cmd);
@@ -82,6 +91,7 @@ private:
     bool validateStrengthPulseValue(const FunctionCommand &cmd);
     bool validateLedIntensityValue(const FunctionCommand &cmd);
     bool validateLedFadeTimeValue(const FunctionCommand &cmd);
+    bool validateRumbleValues(const FunctionCommand &cmd);
     bool validateTcpUdpPort(const FunctionCommand &cmd);
     bool validateLaunchApp(const FunctionCommand &cmd);
     bool validateCloseApp(const FunctionCommand &cmd);

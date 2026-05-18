@@ -1,3 +1,9 @@
+/*
+ * Original Copyright (c) 2026 PolybiusExtreme
+ *
+ * Licensed under the GNU GPLv3.
+ */
+
 #ifndef SYNTAXHIGHLIGHTER_H
 #define SYNTAXHIGHLIGHTER_H
 

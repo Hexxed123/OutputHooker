@@ -1,3 +1,10 @@
+/*
+ * Original Copyright (c) 2026 PolybiusExtreme
+ * Portions Copyright (c) 2026 6Bolt
+ *
+ * Licensed under the GNU GPLv3.
+ */
+
 #ifndef OUTPUTHOOKER_H
 #define OUTPUTHOOKER_H
 
@@ -10,6 +17,7 @@
 #include <QLocalServer>
 #include <QLocalSocket>
 
+#include "gui/DeviceWindow.h"
 #include "gui/TestOutputWindow.h"
 #include "gui/EditorWindow.h"
 #include "gui/AboutWindow.h"
@@ -39,6 +47,9 @@ public:
 
     // Disable the Task Icon Menu - Open OutputHooker
     void setVisible(bool visible) override;
+
+    // getCore needed for DeviceWindow
+    OutputHookerCore* getCore() const { return p_core; }
 
 public slots:
     // Display data in the textBrowser when no game found
@@ -75,6 +86,9 @@ private slots:
     // Read data (command line arguments) from socket
     void readSocket();
 
+    // Open DeviceWindow
+    void on_actionConnected_Devices_triggered();
+
     // Open TestOutputWindow
     void on_actionTestOutputs_triggered();
 
@@ -106,6 +120,9 @@ private slots:
     void on_actionAboutWindow_triggered();
 
 protected:
+    // Device connect or disconnect event
+    bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
+
     // Hide from the Taskbar when minimized
     void changeEvent(QEvent *event) override;
 
@@ -127,6 +144,9 @@ private:
 
     // QPointer - OutputHooker Config
     OutputHookerConfig *p_config;
+
+    // QPointer - Connected Device(s) Window
+    QPointer<DeviceWindow> p_deviceWindow;
 
     // QPointer - Test Outputs Window
     QPointer<TestOutputWindow> p_testOutputWindow;
@@ -178,10 +198,10 @@ private:
     // Tray Icon Menu Action - Open OutputHooker
     QAction *restoreAction;
 
-    // Tray Icon Menu Action - Open Settings
-    QAction *settingsAction;
+    // Tray Icon Menu Action - Open Connected Device(s)
+    QAction *connectedDevicesAction;
 
-    // Tray Icon Menu Action - Open Test Outputs
+    // Tray Icon Menu Action - Open Test Output(s)
     QAction *testOutputAction;
 
     // Tray Icon Menu Action - Open Editor

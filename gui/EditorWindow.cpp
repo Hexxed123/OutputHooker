@@ -1,3 +1,9 @@
+/*
+ * Original Copyright (c) 2026 PolybiusExtreme
+ *
+ * Licensed under the GNU GPLv3.
+ */
+
 #include "EditorWindow.h"
 #include "ui_EditorWindow.h"
 
@@ -263,8 +269,13 @@ void EditorWindow::on_actionCommand_triggered()
             finalString += parts.join("");
             break;
 
+        case CmdAlienLED:
+        case CmdAlienRecoil:
+        case CmdAlienCounter:
         case CmdLedWizColor:
         case CmdUltimarcColor:
+        case CmdSDL3FFA:
+        case CmdUsbHidSend:
             // [Command] [Parameter1] [Parameter2] [Parameter3] [Parameter4] [Parameter5]
             finalString = QString("%1 %2 %3 %4 %5 %6").arg(res.commandCode, res.param1, res.param2, res.param3, res.param4, res.param5);
             break;
@@ -343,6 +354,7 @@ void EditorWindow::on_actionCommand_triggered()
         case CmdXgunnerIGF:
         case CmdLedWizPulse:
         case CmdUltimarcFadeTime:
+        case CmdSDL3FFB:
         case CmdTcpSend:
             // [Command] [Parameter1] [Parameter2]
             finalString = QString("%1 %2 %3").arg(res.commandCode, res.param1, res.param2);

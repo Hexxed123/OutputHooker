@@ -1,3 +1,10 @@
+/*
+ * Original Copyright (c) 2026 PolybiusExtreme
+ * Portions Copyright (c) 2026 6Bolt
+ *
+ * Licensed under the GNU GPLv3.
+ */
+
 #ifndef OUTPUTHOOKERCORE_H
 #define OUTPUTHOOKERCORE_H
 
@@ -18,12 +25,17 @@
 #include "TCPSocketModule.h"
 #include "WinMsgModule.h"
 #include "COMPortModule.h"
+#include "HidapiModule.h"
 #include "LedWizModule.h"
 #include "PacDriveModule.h"
+#include "SdlCtrlModule.h"
 #include "NetCmdModule.h"
 
 #include <windows.h>
 #include <shellapi.h>
+
+// USB HID
+#include "hidapi_winapi.h"
 
 class OutputHookerCore : public QObject
 {
@@ -33,8 +45,10 @@ class OutputHookerCore : public QObject
     QThread threadForWinMsg;
     QThread threadForTCPSocket;
     QThread threadForCOMPort;
+    QThread threadForUSBHID;
     QThread threadForLedWiz;
     QThread threadForUltimarc;
+    QThread threadForSdlCtrl;
     QThread threadForNetCmd;
 
     // Timer for KeyStates
@@ -62,6 +76,15 @@ public:
 
     // Execute command line commands
     void executeCommandLineCommands(const QStringList &commands, const QString &value = "");
+
+    // getLedWizModule needed for DeviceWindow
+    LedWizModule* getLedWizModule() const { return p_ledWiz; }
+
+    // getPacDriveModule needed for DeviceWindow
+    PacDriveModule* getPacDriveModule() const { return p_pacDrive; }
+
+    // getSdlCtrlModule needed for DeviceWindow
+    SdlCtrlModule* getSdlCtrlModule() const { return p_sdlCtrl; }
 
 public slots:
     // Execute command from TestOutputWindow
@@ -95,8 +118,21 @@ signals:
     // Set the bypass of Serial COM port connection fail warning pop-up
     void setBypassComPortConnectFailWarning(const bool &cpBCPCFW);
 
+    // Connects & disconnects USB HID device
+    void startUSBHID(const quint8 &playerNum, const HIDInfo &lgHIDInfo);
+    void stopUSBHID(const quint8 &playerNum);
+
+    // Write data to USB HID device
+    void writeUSBHID(const quint8 &playerNum, const QByteArray &writeData);
+
     // Closes all open Serial COM ports
     void stopAllConnections();
+
+    // Send LEDWiz device list to DeviceWindow
+    void ledWizDeviceList(const QList<LedWizData> &devices);
+
+    // Request LedWiz device refresh
+    void refreshLwDevices();
 
     // Set LedWiz pin state
     void setLwPinState(const quint8 &lwID, const quint8 &lwPin, const bool &lwState);
@@ -113,6 +149,9 @@ signals:
     // Turn all LedWiz lights off
     void turnAllLwLightsOff(const quint8 &lwID);
 
+    // Send Ultimarc device list to DeviceWindow
+    void ultimarcDeviceList(const QList<UltimarcData> &devices);
+
     // Set PacDrive pin state
     void setPdPinState(const quint8 &pdID, const quint8 &pdPin, const bool &pdState);
 
@@ -127,6 +166,12 @@ signals:
 
     // Turn all PacDrive lights off
     void turnAllPdLightsOff(const quint8 &pdID);
+
+    // Send SDL device list to DeviceWindow
+    void sdlDeviceList(const QList<SdlCtrlData> &devices);
+
+    // Set SDL3 gamecontroller rumble
+    void setRumble(const quint8 &id, const bool &state, const uint16_t &leftStrength, const uint16_t &rightStrength, const uint32_t &duration);
 
     // Connect to TCP host
     void connectTcpHost(const quint8 &socket, const QString &host, quint16 port);
@@ -193,11 +238,17 @@ private:
     // Serial COM Port module
     COMPortModule *p_comPort;
 
+    // USB HID module
+    HidapiModule *p_usbHID;
+
     // LedWiz module
     LedWizModule *p_ledWiz;
 
     // PacDrive module
     PacDriveModule *p_pacDrive;
+
+    // SDL3 controller module
+    SdlCtrlModule *p_sdlCtrl;
 
     // Network command module
     NetCmdModule *p_netCmd;
@@ -226,6 +277,9 @@ private:
     // Check single command loaded from INI file
     bool checkINICommand(QString commandNotChk, quint16 lineNumber, QString filePathName);
 
+    // Find USB HID device
+    bool FindUSBHIDDevice(quint16 vendorID, quint16 productID, quint8 deviceNumber);
+
     // Map key name to virtual key code
     int mapKeyNameToCode(const QString &name);
 
@@ -243,6 +297,9 @@ private:
 
     // Write to COM port
     void comPortWrite(quint8 cpNum, QString cpData);
+
+    // Close all USB HID connections
+    void closeUSBHID();
 
     // Set LedWiz pin state
     void setLedWizPinState(quint8 lwID, quint8 lwPin, bool lwState);
@@ -273,6 +330,9 @@ private:
 
     // Turn all PacDrive lights off
     void turnAllPacDriveLightsOff(quint8 pacID);
+
+    // Set SDL3 gamecontroller rumble
+    void setCtrlRumble(quint8 id, bool state, uint16_t leftStrength, uint16_t rightStrength, uint32_t duration);
 
     // TCP connect
     void tcpConnect(quint8 socket, QString host, quint16 port);
@@ -342,6 +402,15 @@ private:
 
     // Serial COM Port data map
     QMap<quint8,ComPortStruct> comPortMap;
+
+    // If USB HID is initialized
+    bool isUSBHIDInit;
+
+    // QMap - HID player
+    QMap<QString,quint8> hidPlayerMap;
+
+    // Process usage & usagePage from USB HID data
+    QString processHIDUsage(quint16 usagePage, quint16 usage);
 
     // If Windows message system is connected
     bool isWinMsgConnected;

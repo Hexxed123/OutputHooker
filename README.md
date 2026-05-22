@@ -34,7 +34,7 @@ This tool acts as the essential bridge between emulators and your arcade hardwar
 ## Getting Started
 1. Download the latest build from the [Releases](https://github.com/PolybiusExtreme/OutputHooker/releases) page
 
-2. Configure your emulator (e.g., MAME) to broadcast outputs via TCP or Windows Messages
+2. Configure your emulator (e.g. MAME) to broadcast outputs via TCP or Windows Messages
 
 3. Launch the application, start a game and use the INI Editor to define your hardware mappings
 

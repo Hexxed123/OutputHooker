@@ -34,7 +34,7 @@ This tool acts as the essential bridge between emulators and your arcade hardwar
 ## Getting Started
 1. Download the latest build from the [Releases](https://github.com/PolybiusExtreme/OutputHooker/releases) page
 
-2. Configure your emulator (e.g., MAME) to broadcast outputs via TCP or Windows Messages
+2. Configure your emulator (e.g. MAME) to broadcast outputs via TCP or Windows Messages
 
 3. Launch the application, start a game and use the INI Editor to define your hardware mappings
 
@@ -69,6 +69,14 @@ and the SDL3 library for generic gamecontrollers.
 - Ben Baker (MAME Interop SDK & Ultimarc SDK developer)  
 - Aaron Giles (MAME output code developer)
 - 6Bolt ([Hook of the Reaper](https://hotr.6bolt.com/) developer)
+
+## Special Thanks
+- Hexxed123
+- djGliTCH
+- Cheesmaker
+- Bandicoot37  
+
+and all other users for their feedback and support!
 
 ***
 **Copyright &copy; 2026 by PolybiusExtreme**

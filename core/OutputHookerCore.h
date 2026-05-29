@@ -185,6 +185,9 @@ signals:
     // Send UDP command
     void sendUdpCommand(const quint8 &type, const QString &address, quint16 port, const QString &command);
 
+    // Send HTTP Post request
+    void sendHttpPostRequest(const QString &url, const QString &contentType, const QByteArray &data);
+
     // Update the display data
     void noConnectedGame();
     void connectedGame(QString gName, QString iName, bool iniGame, bool noGameFound);
@@ -266,7 +269,7 @@ private:
     bool isDefaultINIFile();
 
     // Load INI file for the game
-    void loadINIFile();
+    void loadINIFile(const QString &filePath);
 
     // Create a new INI File for the game
     void newINIFile();
@@ -287,7 +290,7 @@ private:
     void processINICommands(QString signalName, QString value, bool isState);
 
     // Execute commands based on INI file
-    void executeINICommands(const QStringList &commands, const QString &value = "");
+    void executeINICommands(const QStringList &commands, const QString &value);
 
     // Open COM port
     void comPortOpen(quint8 cpNum);
@@ -346,6 +349,9 @@ private:
     // Send UDP command
     void udpSendCommand(quint8 type, QString address, quint16 port, QString command);
 
+    // Send HTTP Post request
+    void httpPostRequest(QString url, QString contentType, QByteArray request);
+
     // Launch Application
     void launchApplication(QString executable, QString parameter, quint8 mode);
 
@@ -354,9 +360,6 @@ private:
 
     // Play WAV audio file
     void playWavAudioFile(QString file);
-
-    // Clear things on a Window message system or TCP Socket disconnect
-    void clearOnDisconnect();
 
     // Current path
     QString currentPath;
@@ -423,7 +426,7 @@ private:
 
     // Settings used in OutputHookerCore
     bool useNewOutputsNotification;
-    bool saveNewOutputsToDefaultINI;
+    bool addNewOutputsToDefaultINI;
     bool useMultiThreading;
     bool bypassSerialWriteChecks;
 

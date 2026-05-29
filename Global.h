@@ -13,9 +13,9 @@
 #include <windows.h>
 
 // Version info
-#define VERSION                 "1.4.0"
+#define VERSION                 "1.5.0"
 #define VERSIONMAIN             1
-#define VERSIONMID              4
+#define VERSIONMID              5
 #define VERSIONLAST             0
 
 // Settings
@@ -90,6 +90,7 @@
 #define TCPSOCKETDISCONNECT     "tsd"
 #define TCPSOCKETSEND           "tss"
 #define UDPSOCKETSEND           "udp"
+#define HTTPPOSTREQUEST         "hpr"
 #define APPCMDSTART             "ap"
 #define APPLAUNCH               "apl"
 #define APPCLOSE                "apc"
@@ -234,6 +235,7 @@ enum CommandType
     CmdTcpDisconnect,
     CmdTcpSend,
     CmdUdpSend,
+    CmdHprSend,
     // External Application
     CmdAppLaunch,
     CmdAppClose,
@@ -259,8 +261,7 @@ struct FunctionCommand
 
 // TCP Socket
 #define TCPHOSTPORT             8000
-#define TIMETOWAIT              3000
-#define TCPTIMERTIME            3050
+#define TCPTIMERTIME            2000
 
 // Serial COM Port
 #define MAXCOMPORTS             50

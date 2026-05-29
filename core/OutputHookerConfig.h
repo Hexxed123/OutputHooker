@@ -32,8 +32,8 @@ public:
     void setUseNewOutputsNotification(bool unoNotification);
 
     // Save new outputs to default.ini
-    bool getSaveNewOutputsToDefaultINI();
-    void setSaveNewOutputsToDefaultINI(bool snotDefaultINI);
+    bool getAddNewOutputsToDefaultINI();
+    void setAddNewOutputsToDefaultINI(bool anotDefaultINI);
 
     // Use Multi-Threading
     bool getUseMultiThreading();
@@ -52,7 +52,7 @@ private:
 
     // Settings
     bool useNewOutputsNotification;
-    bool saveNewOutputsToDefaultINI;
+    bool addNewOutputsToDefaultINI;
     bool useMultiThreading;
     bool bypassSerialWriteChecks;
 

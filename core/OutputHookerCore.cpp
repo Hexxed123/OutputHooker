@@ -107,8 +107,8 @@ OutputHookerCore::OutputHookerCore(OutputHookerConfig *ohConfig, QObject *parent
     // TCP Socket connections
 
     // Connect the signals & slots for TCP Socket
-    connect(this, &OutputHookerCore::startTCPSocket, p_tcpSocket, &TCPSocketModule::connectTCP);
-    connect(this, &OutputHookerCore::stopTCPSocket, p_tcpSocket, &TCPSocketModule::disconnectTCP);
+    connect(this, &OutputHookerCore::startTCPSocket, p_tcpSocket, &TCPSocketModule::tcpConnect);
+    connect(this, &OutputHookerCore::stopTCPSocket, p_tcpSocket, &TCPSocketModule::tcpDisconnect);
     connect(p_tcpSocket, &TCPSocketModule::dataRead, this, &OutputHookerCore::processData);
     connect(p_tcpSocket, &TCPSocketModule::tcpConnectedSignal, this, &OutputHookerCore::tcpConnected);
     connect(p_tcpSocket, &TCPSocketModule::tcpDisconnectedSignal, this, &OutputHookerCore::tcpDisconnected);
@@ -272,6 +272,7 @@ OutputHookerCore::OutputHookerCore(OutputHookerConfig *ohConfig, QObject *parent
     connect(this, &OutputHookerCore::disconnectTcpHost, p_netCmd, &NetCmdModule::disconnectTcpHost);
     connect(this, &OutputHookerCore::sendTcpCommand, p_netCmd, &NetCmdModule::sendTcpCommand);
     connect(this, &OutputHookerCore::sendUdpCommand, p_netCmd, &NetCmdModule::sendUdpCommand);
+    connect(this, &OutputHookerCore::sendHttpPostRequest, p_netCmd, &NetCmdModule::sendHttpPostRequest);
     connect(p_netCmd, &NetCmdModule::showErrorMessage, this, &OutputHookerCore::errorMessage);
 
     if (useMultiThreading)
@@ -365,7 +366,7 @@ void OutputHookerCore::loadSettingsFromList()
 {
     // Settings values
     useNewOutputsNotification = p_config->getUseNewOutputsNotification();
-    saveNewOutputsToDefaultINI = p_config->getSaveNewOutputsToDefaultINI();
+    addNewOutputsToDefaultINI = p_config->getAddNewOutputsToDefaultINI();
     bypassSerialWriteChecks = p_config->getSerialPortWriteCheckBypass();
     // Don't get Multi-Threading, as it needs a application reset
     // useMultiThreading = p_config->getUseMultiThreading();
@@ -654,6 +655,14 @@ void OutputHookerCore::executeTestCommand(const FunctionCommand &cmd)
         QString command = cmd.param4;
         udpSendCommand(type, address, port, command);
     }
+    // HTTP POST request
+    else if (cmd.commandCode.startsWith(HTTPPOSTREQUEST, Qt::CaseInsensitive))
+    {
+        QString url = cmd.param1;
+        QString contentType = cmd.param2;
+        QByteArray request = cmd.param3.toUtf8();
+        httpPostRequest(url, contentType, request);
+    }
     // Launch and Close Application commands, starts with "ap"
     else if (cmd.commandCode.startsWith(APPCMDSTART, Qt::CaseInsensitive) == true)
     {
@@ -700,7 +709,7 @@ void OutputHookerCore::winMsgDisconnected()
     emit connectionStatus(OutputHookerCore::WinMsg, isWinMsgConnected);
 
     if (!gameHasStopped)
-        clearOnDisconnect();
+        gameStopped();
 
     if (!p_winMsg->isConnected && !p_winMsg->isConnecting)
         emit startWinMsg();
@@ -720,7 +729,7 @@ void OutputHookerCore::tcpDisconnected()
     emit connectionStatus(OutputHookerCore::TCP, isTCPSocketConnected);
 
     if (!gameHasStopped)
-        clearOnDisconnect();
+        gameStopped();
 
     if (!p_tcpSocket->isConnected && !p_tcpSocket->isConnecting)
         emit startTCPSocket();
@@ -792,19 +801,23 @@ void OutputHookerCore::processData(const QString &signal, const QString &data)
         else
         {
             // If not in the QMap, add it
-            if (!isOutputHookerMinimized)
+            if (signalsAndData.contains(signal) == false)
             {
-                if (signalsAndData.contains(signal) == false)
+                signalsAndData.insert(signal, data);
+                if (!isOutputHookerMinimized)
                 {
-                    signalsAndData.insert(signal,data);
                     emit addSignalFromGame(signal, data);
                 }
-                else
+            }
+            else
+            {
+                signalsAndData[signal] = data;
+                if (!isOutputHookerMinimized)
                 {
-                    signalsAndData[signal] = data;
                     emit updateSignalFromGame(signal, data);
                 }
             }
+
             if (signalsAndCommands.contains(signal))
             {
                 if (iniFileLoaded)
@@ -819,19 +832,17 @@ void OutputHookerCore::gameStart(const QString &data)
 {
     QObject* dynamicSender = sender();
 
-    if (dynamicSender == p_winMsg) {
+    if (dynamicSender == p_winMsg)
+    {
         emit stopTCPSocket();
     }
-    else if (dynamicSender == p_tcpSocket) {
+    else if (dynamicSender == p_tcpSocket)
+    {
         emit stopWinMsg();
     }
 
     gameName = data;
-
-    if (saveNewOutputsToDefaultINI)
-        iniName = DEFAULTFILE;
-    else
-        iniName = gameName;
+    iniName = gameName;
 
     isGameFound = true;
     gameHasRun = true;
@@ -847,10 +858,12 @@ void OutputHookerCore::emptyGameStart()
 {
     QObject* dynamicSender = sender();
 
-    if (dynamicSender == p_winMsg) {
+    if (dynamicSender == p_winMsg)
+    {
         emit stopTCPSocket();
     }
-    else if (dynamicSender == p_tcpSocket) {
+    else if (dynamicSender == p_tcpSocket)
+    {
         emit stopWinMsg();
     }
 
@@ -862,33 +875,61 @@ void OutputHookerCore::emptyGameStart()
 // Game stopped process
 void OutputHookerCore::gameStopped()
 {
-    quint8 j;
-
     if (iniFileLoaded)
     {
         // Run the commands attached to 'mame_stop'
         processINICommands(MAMESTOP, "", true);
 
         // If INI file loaded, search for any new signal(s) not in the file
-        // These signals are appended to the INI game file and closed
-        quint8 foundCount = 0;
+        // These signals are appended to the INI file and closed
+        QStringList gameNewSignals;
+        QStringList defaultNewSignals;
         bool foundNewSignal = false;
-        QStringList nemSignalList;
 
-        // Searching the 2 QMaps for any new signal(s)
+        QString defaultINIFilePath = iniPath + "/" + DEFAULTFILE + ENDOFINIFILE;
+
+        QString defaultINIFileContent;
+        QFile defaultINIFile(defaultINIFilePath);
+
+        if (defaultINIFile.open(QIODevice::ReadOnly | QIODevice::Text))
+        {
+            QTextStream in(&defaultINIFile);
+            defaultINIFileContent = in.readAll();
+            defaultINIFile.close();
+        }
+
+        // Searching the QMap for any new signal(s)
         QMapIterator<QString, QString> x(signalsAndData);
+
         while (x.hasNext())
         {
             x.next();
-            if (!signalsAndCommands.contains(x.key()) && !signalsNoCommands.contains(x.key()))
+            QString currentSignal = x.key();
+
+            if (currentSignal == MAMESTOP || currentSignal == GAMESTOP)
             {
-                nemSignalList << x.key();
-                foundCount++;
+                continue;
+            }
+
+            // Check if signal is in game-specific INI file
+            if (!signalsAndCommands.contains(currentSignal) && !signalsNoCommands.contains(currentSignal))
+            {
+                gameNewSignals << currentSignal;
                 foundNewSignal = true;
+            }
+
+            if (addNewOutputsToDefaultINI)
+            {
+                // Check if signal is in default.ini
+                if (!defaultINIFileContent.contains(currentSignal))
+                {
+                    defaultNewSignals << currentSignal;
+                    foundNewSignal = true;
+                }
             }
         }
 
-        // If any new signal(s) found, then append to the INI game file
+        // If any new signal(s) found, then append to the INI file
         if (foundNewSignal)
         {
             // Play notification sound if setting is set
@@ -897,25 +938,47 @@ void OutputHookerCore::gameStopped()
                 playWavAudioFile("notification.wav");
             }
 
-            // Open INI file to append
-            QFile iniFileTemp(gameINIFilePath);
-            if (!iniFileTemp.open(QIODevice::Append | QIODevice::Text))
+            // Write to the game-specific INI file (if new signals are available)
+            if (!gameNewSignals.isEmpty())
             {
-                emit showErrorMessage("Write Error", "Could not write to " + gameName + ENDOFINIFILE + "!");
-                return;
-            }
-            QTextStream out(&iniFileTemp);
+                QFile iniFileTemp(gameINIFilePath);
 
-            for (j = 0; j < foundCount; j++)
-            {
-                // If output signal is mame_stop or game_stop, then skip the entry
-                if (nemSignalList[j] == MAMESTOP || nemSignalList[j] == GAMESTOP)
+                if (iniFileTemp.open(QIODevice::Append | QIODevice::Text))
                 {
-                    continue;
+                    QTextStream out(&iniFileTemp);
+
+                    for (const QString &sig : std::as_const(gameNewSignals))
+                    {
+                        out << sig << "=\n";
+                    }
+                    iniFileTemp.close();
                 }
-                out << nemSignalList[j] << "=\n";
+                else
+                {
+                    emit showErrorMessage("Write Error", "Could not write to " + gameName + ENDOFINIFILE + "!");
+                }
             }
-            iniFileTemp.close();
+
+            // Write to default.ini (if addNewOutputsToDefaultINI is active & signals are missing)
+            if (addNewOutputsToDefaultINI && !defaultNewSignals.isEmpty())
+            {
+                QFile defaultIniFileTemp(defaultINIFilePath);
+
+                if (defaultIniFileTemp.open(QIODevice::Append | QIODevice::Text))
+                {
+                    QTextStream out(&defaultIniFileTemp);
+
+                    for (const QString &sig : std::as_const(defaultNewSignals))
+                    {
+                        out << sig << "=\n";
+                    }
+                    defaultIniFileTemp.close();
+                }
+                else
+                {
+                    emit showErrorMessage("Write Error", "Could not write to " + QString(DEFAULTFILE) + ENDOFINIFILE + "!");
+                }
+            }
         }
         iniFileLoaded = false;
     }
@@ -934,7 +997,8 @@ void OutputHookerCore::gameStopped()
     iniFileLoaded = false;
     gameHasStopped = true;
 
-    if (isCoreStarted) {
+    if (isCoreStarted)
+    {
         emit startWinMsg();
         emit startTCPSocket();
 
@@ -948,40 +1012,27 @@ void OutputHookerCore::gameStopped()
 // Game found process
 void OutputHookerCore::gameFound()
 {
-    // If setting is set, save new outputs to default.ini
-    if (saveNewOutputsToDefaultINI)
-    {
-        // Checks if a default INI file exists
-        isDefaultINI = isDefaultINIFile();
+    // Checks if a default INI file exists
+    isDefaultINI = isDefaultINIFile();
 
-        // If there is a default INI file, then load it
+    // Check if a game INI file exists
+    isGameINI = isINIFile();
+
+    // If there is a default INI file and a game ini, then load it
+    if (isDefaultINI || isGameINI)
+    {
+        // Load default.ini
         if (isDefaultINI)
         {
-            emit connectedGame(gameName, iniName, true, false);
-            loadINIFile();
+            QString defaultPath = iniPath + "/" + DEFAULTFILE + ENDOFINIFILE;
+            loadINIFile(defaultPath);
         }
-        else
-        {
-            // Play notification sound if setting is set
-            if (useNewOutputsNotification)
-            {
-                playWavAudioFile("notification.wav");
-            }
 
-            emit connectedGame(gameName, iniName, true, false);
-            newINIFile();
-        }
-    }
-    else
-    {
-        // Check if a game INI file exists
-        isGameINI = isINIFile();
-
-        // If there is a game INI file, then load it
+        // Load game ini
         if (isGameINI)
         {
-            emit connectedGame(gameName, iniName, true, false);
-            loadINIFile();
+            QString gamePath = iniPath + "/" + gameName + ENDOFINIFILE;
+            loadINIFile(gamePath);
         }
         else
         {
@@ -991,10 +1042,12 @@ void OutputHookerCore::gameFound()
                 playWavAudioFile("notification.wav");
             }
 
-            emit connectedGame(gameName, iniName, true, false);
             newINIFile();
         }
+
+        emit connectedGame(gameName, iniName, true, false);
     }
+
 }
 
 // Check if an INI file exists for the game
@@ -1011,9 +1064,65 @@ bool OutputHookerCore::isDefaultINIFile()
     return QFile::exists(gameINIFilePath);
 }
 
-// Load INI file for the game
-void OutputHookerCore::loadINIFile()
+QStringList splitCommands(const QString &commands)
 {
+    QStringList result;
+    QString currentToken;
+
+    int braceCount = 0;
+    int bracketCount = 0;
+    bool inQuotes = false;
+
+    for (int i = 0; i < commands.length(); ++i)
+    {
+        QChar ch = commands.at(i);
+
+        // Check for quotation marks (and ignore escaped quotation marks "\")
+        if (ch == '"' && (i == 0 || commands.at(i - 1) != '\\'))
+        {
+            inQuotes = !inQuotes;
+        }
+
+        // Count parentheses when we are not in quotation marks
+        if (!inQuotes)
+        {
+            if (ch == '{') braceCount++;
+            else if (ch == '}') braceCount--;
+            else if (ch == '[') bracketCount++;
+            else if (ch == ']') bracketCount--;
+        }
+
+        // If a comma is found AND we are outside of any parentheses/quotes
+        if (ch == ',' && braceCount == 0 && bracketCount == 0 && !inQuotes)
+        {
+            QString trimmed = currentToken.trimmed();
+            if (!trimmed.isEmpty())
+            {
+                result.append(trimmed);
+            }
+            currentToken.clear();
+        }
+        else
+        {
+            currentToken.append(ch);
+        }
+    }
+
+    // Add the last command after the last comma
+    QString trimmed = currentToken.trimmed();
+    if (!trimmed.isEmpty())
+    {
+        result.append(trimmed);
+    }
+
+    return result;
+}
+
+// Load INI file for the game
+void OutputHookerCore::loadINIFile(const QString &filePath)
+{
+    QString targetFilePath = filePath.isEmpty() ? gameINIFilePath : filePath;
+
     QString line;
     QString key;
     QString commands;
@@ -1022,22 +1131,23 @@ void OutputHookerCore::loadINIFile()
     int indexEqual;
     bool isOutput = false;
     bool isKeyStates = false;
-
     iniFileLoadFail = false;
-    openComPortCheck.clear();
 
-    // Close any old USB HID connections
-    closeUSBHID();
-    hidPlayerMap.clear();
+    if (targetFilePath.contains(DEFAULTFILE, Qt::CaseInsensitive) || !iniFileLoaded)
+    {
+        openComPortCheck.clear();
+        closeUSBHID();
+        hidPlayerMap.clear();
+    }
 
     // Open file. If failed to open, show Critical Message Box
-    QFile iniFile(gameINIFilePath);
+    QFile iniFile(targetFilePath);
     // Set write permission to iniFile
     iniFile.setPermissions(iniFile.permissions() | QFile::WriteOwner);
 
     if (!iniFile.open(QIODevice::ReadOnly | QIODevice::Text))
     {
-        emit showErrorMessage("Error", "Could not open " + gameName + ENDOFINIFILE + "!");
+        emit showErrorMessage("Error", "Could not open " + targetFilePath + "!");
         return;
     }
 
@@ -1083,9 +1193,7 @@ void OutputHookerCore::loadINIFile()
 
             if (!commands.isEmpty())
             {
-                commands.replace(", ", ",");
-                commands.replace(" ,", ",");
-                tempSplit = commands.split(',', Qt::SkipEmptyParts);
+                tempSplit = splitCommands(commands);
 
                 // Process RefreshTime value immediately and do not check it in checkINICommands
                 if (isKeyStates && key.compare("RefreshTime", Qt::CaseInsensitive) == 0)
@@ -1095,7 +1203,7 @@ void OutputHookerCore::loadINIFile()
                 }
 
                 // Syntax check of the commands
-                if (!checkINICommands(tempSplit, lineNumber, gameINIFilePath))
+                if (!checkINICommands(tempSplit, lineNumber, targetFilePath))
                 {
                     iniFileLoadFail = true;
                     iniFile.close();
@@ -1116,6 +1224,7 @@ void OutputHookerCore::loadINIFile()
                 {
                     // Normal game outputs
                     signalsAndCommands.insert(key, tempSplit);
+                    signalsNoCommands.removeOne(key);
                 }
                 else
                 {
@@ -1129,13 +1238,33 @@ void OutputHookerCore::loadINIFile()
                         signal.insert(4, '_');
 
                     stateAndCommands.insert(signal, tempSplit);
+                    statesNoCommands.removeOne(signal);
                 }
             }
             else
             {
                 // Mark entries without commands for automatic completion
-                if (isOutput) signalsNoCommands << key;
-                else if (!isKeyStates) statesNoCommands << key;
+                if (isOutput)
+                {
+                    if (!signalsAndCommands.contains(key) && !signalsNoCommands.contains(key))
+                    {
+                        signalsNoCommands << key;
+                    }
+                }
+                else if (!isKeyStates)
+                {
+                    QString signal = key.toLower();
+
+                    if (signal.startsWith("on"))
+                        signal.remove(0, 2);
+                    if (signal.startsWith("mame") && !signal.contains("_"))
+                        signal.insert(4, '_');
+
+                    if (!stateAndCommands.contains(signal) && !statesNoCommands.contains(signal))
+                    {
+                        statesNoCommands << signal;
+                    }
+                }
             }
         }
     }
@@ -1144,23 +1273,28 @@ void OutputHookerCore::loadINIFile()
     iniFile.close();
     iniFileLoaded = true;
 
-    // Timer logic for KeyStates
-    if (!keyStatesAndCommands.isEmpty())
+    if (targetFilePath.contains(gameName + ENDOFINIFILE, Qt::CaseInsensitive) || !isGameINI)
     {
-        int interval = (keyStatesRefreshTime < 10) ? 100 : keyStatesRefreshTime;
-        keyStateTimer->start(interval);
+        // Timer logic for KeyStates
+        if (!keyStatesAndCommands.isEmpty())
+        {
+            int interval = (keyStatesRefreshTime < 10) ? 100 : keyStatesRefreshTime;
+            keyStateTimer->start(interval);
+        }
+
+        // Bypass the COM port connection fail warning pop-up, as MAMEHooker does
+        emit setBypassComPortConnectFailWarning(true);
+
+        // Process the "mame_start" signal
+        processINICommands(MAMESTART, "", true);
     }
-
-    // Bypass the COM port connection fail warning pop-up, as MAMEHooker does
-    emit setBypassComPortConnectFailWarning(true);
-
-    // Process the "mame_start" signal
-    processINICommands(MAMESTART, "", true);
 }
 
 // Create a new INI File for the game
 void OutputHookerCore::newINIFile()
 {
+    gameINIFilePath = iniPath + "/" + gameName + ENDOFINIFILE;
+
     // Copy template INI file over with game name as the file name
     bool copyFile = QFile::copy(":/ini/template.ini", gameINIFilePath);
 
@@ -1170,7 +1304,7 @@ void OutputHookerCore::newINIFile()
         return;
     }
 
-    loadINIFile();
+    loadINIFile(gameINIFilePath);
 }
 
 // Check the commands loaded from INI file
@@ -2227,6 +2361,22 @@ bool OutputHookerCore::checkINICommand(QString commandNotChk, quint16 lineNumber
         // Good command
         return true;
     }
+    // HTTP POST request
+    else if (commandNotChk.startsWith(HTTPPOSTREQUEST, Qt::CaseInsensitive))
+    {
+        // This will give 4 strings = 1: hpr  2: URL  3: Content-Type  4: Request
+        cmd = commandNotChk.split(' ', Qt::SkipEmptyParts);
+
+        if (cmd.size() < 4)
+        {
+            QString errorMsg = "Command requires 3 parameters (URL, Content-Type, Request)!\nLine Number: " + QString::number(lineNumber) + "\nFile: " + gameName + ENDOFINIFILE;;
+            emit showErrorMessage("HTTP POST - Send Request - Error", errorMsg);
+            return false;
+        }
+
+        // Good command
+        return true;
+    }
     // Launch and Close Application commands, starts with "ap"
     else if (commandNotChk.startsWith(APPCMDSTART, Qt::CaseInsensitive) == true)
     {
@@ -2986,6 +3136,20 @@ void OutputHookerCore::executeINICommands(const QStringList &commands, const QSt
                 udpSendCommand(type, address, port, command);
             }
         }
+        // HTTP POST request
+        else if (currentCommand.startsWith(HTTPPOSTREQUEST, Qt::CaseInsensitive))
+        {
+            // This will give 4 strings = 1: hpr  2: URL  3: Content-Type  4: Request
+            cmd = currentCommand.split(' ', Qt::SkipEmptyParts);
+
+            if (cmd.size() >= 4)
+            {
+                QString url = cmd[1];
+                QString currentType = cmd[2];
+                QByteArray request = cmd[3].toUtf8();
+                httpPostRequest(url, currentType, request);
+            }
+        }
         // Launch and Close Application commands, starts with "ap"
         else if (currentCommand.startsWith(APPCMDSTART, Qt::CaseInsensitive) == true)
         {
@@ -3167,6 +3331,12 @@ void OutputHookerCore::udpSendCommand(quint8 type, QString address, quint16 port
     emit sendUdpCommand(type, address, port, command);
 }
 
+// Send HTTP POST request
+void OutputHookerCore::httpPostRequest(QString url, QString contentType, QByteArray request)
+{
+    emit sendHttpPostRequest(url, contentType, request);
+}
+
 // Launch Application
 void OutputHookerCore::launchApplication(QString executable, QString parameter, quint8 mode)
 {
@@ -3219,91 +3389,6 @@ void OutputHookerCore::playWavAudioFile(QString file)
             });
 
     effect->play();
-}
-
-// Clear things on a Window message system or TCP Socket disconnect
-void OutputHookerCore::clearOnDisconnect()
-{
-    quint8 j;
-
-    // If game files are still open, close them
-    if (iniFileLoaded)
-    {
-        // Run the commands attached to 'mame_stop'
-        processINICommands(MAMESTOP, "", true);
-
-        // If INI file loaded, must search for any new signal(s) not in the file
-        // These signals are appended to the INI game file and closed
-        quint8 foundCount = 0;
-        bool foundNewSignal = false;
-        QStringList nemSignalList;
-
-        // Searching the 2 QMaps for any new signal(s)
-        QMapIterator<QString, QString> x(signalsAndData);
-        while (x.hasNext())
-        {
-            x.next();
-            if (!signalsAndCommands.contains(x.key()) && !signalsNoCommands.contains(x.key()))
-            {
-                nemSignalList << x.key();
-                foundCount++;
-                foundNewSignal = true;
-            }
-        }
-
-        // If any new signal(s) found, then append to the INI game file
-        if (foundNewSignal)
-        {
-            // Play notification sound if setting is set
-            if (useNewOutputsNotification)
-            {
-                playWavAudioFile("notification.wav");
-            }
-
-            // Open INI file to append
-            QFile iniFileTemp(gameINIFilePath);
-            if (!iniFileTemp.open(QIODevice::Append | QIODevice::Text))
-            {
-                emit showErrorMessage("Write Error", "Could not write to " + gameName + ENDOFINIFILE + "!");
-                return;
-            }
-            QTextStream out(&iniFileTemp);
-
-            for (j = 0; j < foundCount; j++)
-            {
-                // If output signal is mame_stop or game_stop, then skip the entry
-                if (nemSignalList[j] == MAMESTOP || nemSignalList[j] == GAMESTOP)
-                {
-                    continue;
-                }
-                out << nemSignalList[j] << "=\n";
-            }
-            iniFileTemp.close();
-        }
-    }
-
-    isGameFound = false;
-    gameHasRun = false;
-    isEmptyGame = false;
-    signalsAndCommands.clear();
-    stateAndCommands.clear();
-    signalsNoCommands.clear();
-    statesNoCommands.clear();
-    signalsAndData.clear();
-    statesAndData.clear();
-    keyStatesAndCommands.clear();
-    lastKeyStates.clear();
-    iniFileLoaded = false;
-
-    if (isCoreStarted) {
-        emit startWinMsg();
-        emit startTCPSocket();
-
-        emit connectionStatus(OutputHookerCore::WinMsg, isWinMsgConnected);
-        emit connectionStatus(OutputHookerCore::TCP, isTCPSocketConnected);
-    }
-
-    emit noConnectedGame();
 }
 
 // Process usage & usagePage from USB HID data

@@ -16,7 +16,7 @@ OutputHookerConfig::OutputHookerConfig(QObject *parent)
 {
     // Set settings to default
     useNewOutputsNotification = true;
-    saveNewOutputsToDefaultINI = false;
+    addNewOutputsToDefaultINI = false;
     useMultiThreading = true;
     bypassSerialWriteChecks = false;
 
@@ -37,8 +37,8 @@ void OutputHookerConfig::saveSettings()
 {
     QSettings settings(settingsFile, QSettings::Format::IniFormat);
     settings.beginGroup("OutputHooker");
-    settings.setValue("Notification", useNewOutputsNotification);
-    settings.setValue("UseDefaultINI", saveNewOutputsToDefaultINI);
+    settings.setValue("NotificationOnNewOutputs", useNewOutputsNotification);
+    settings.setValue("AddNewOutputsToDefaultINI", addNewOutputsToDefaultINI);
     settings.setValue("MultiThreading", useMultiThreading);
     settings.endGroup();
 
@@ -64,8 +64,8 @@ void OutputHookerConfig::loadSettings()
     QSettings settings(settingsFile, QSettings::Format::IniFormat);
 
     settings.beginGroup("OutputHooker");
-    useNewOutputsNotification = (settings.value("Notification").toBool());
-    saveNewOutputsToDefaultINI = (settings.value("UseDefaultINI").toBool());
+    useNewOutputsNotification = (settings.value("NotificationOnNewOutputs").toBool());
+    addNewOutputsToDefaultINI = (settings.value("AddNewOutputsToDefaultINI").toBool());
     useMultiThreading = (settings.value("MultiThreading").toBool());
     settings.endGroup();
 
@@ -95,14 +95,14 @@ void OutputHookerConfig::setUseNewOutputsNotification(bool unoNotification)
     useNewOutputsNotification = unoNotification;
 }
 
-bool OutputHookerConfig::getSaveNewOutputsToDefaultINI()
+bool OutputHookerConfig::getAddNewOutputsToDefaultINI()
 {
-    return saveNewOutputsToDefaultINI;
+    return addNewOutputsToDefaultINI;
 }
 
-void OutputHookerConfig::setSaveNewOutputsToDefaultINI(bool snotDefaultINI)
+void OutputHookerConfig::setAddNewOutputsToDefaultINI(bool anotDefaultINI)
 {
-    saveNewOutputsToDefaultINI = snotDefaultINI;
+    addNewOutputsToDefaultINI = anotDefaultINI;
 }
 
 bool OutputHookerConfig::getUseMultiThreading()

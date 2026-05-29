@@ -93,14 +93,14 @@ OutputHooker::OutputHooker(QWidget *parent)
     // Get "Notification on new Output(s)" setting
     useNewOutputsNotification = p_config->getUseNewOutputsNotification();
     // Get "Add new Output(s) to default.ini" setting
-    saveNewOutputsToDefaultINI = p_config->getSaveNewOutputsToDefaultINI();
+    addNewOutputsToDefaultINI = p_config->getAddNewOutputsToDefaultINI();
     // If "Notification on new Output(s)" setting set, check the menu entry
     if (useNewOutputsNotification)
         ui->actionNotification->setChecked(true);
     else
         ui->actionNotification->setChecked(false);
     // If "Add new Output(s) to default.ini" setting set, check the menu entry
-    if (saveNewOutputsToDefaultINI)
+    if (addNewOutputsToDefaultINI)
         ui->actionDefaultINI->setChecked(true);
     else
         ui->actionDefaultINI->setChecked(false);
@@ -189,7 +189,7 @@ void OutputHooker::displayGame(QString gName, QString iName, bool iniGame, bool 
 
     // Enable menu entry "Edit ini file for current game",
     // if "Add new output(s) to default.ini" is not set
-    if (!saveNewOutputsToDefaultINI)
+    if (!addNewOutputsToDefaultINI)
         ui->actionEditCurrentGameINI->setEnabled(true);
 }
 
@@ -366,8 +366,8 @@ void OutputHooker::on_actionDefaultINI_triggered()
         coreRunning = false;
     }
 
-    saveNewOutputsToDefaultINI = ui->actionDefaultINI->isChecked();
-    p_config->setSaveNewOutputsToDefaultINI(saveNewOutputsToDefaultINI);
+    addNewOutputsToDefaultINI = ui->actionDefaultINI->isChecked();
+    p_config->setAddNewOutputsToDefaultINI(addNewOutputsToDefaultINI);
     p_config->saveSettings();
 
     // Start OutputHookerCore

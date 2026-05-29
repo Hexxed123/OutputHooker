@@ -84,6 +84,7 @@ private:
     void setupUsbHidUI(CommandType cmd);
     void setupTcpUI(CommandType cmd);
     void setupUdpUI(CommandType cmd);
+    void setupHttpUI(CommandType cmd);
     void setupAppUI(CommandType cmd);
     void setupAudioUI();
 
